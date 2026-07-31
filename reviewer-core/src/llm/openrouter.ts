@@ -99,12 +99,21 @@ export class OpenRouterProvider implements LLMProvider {
 
       const parsed = parseWithRepair(req.schema, lastRaw);
       if (parsed.ok) {
+        // Prefer the provider's OWN billing figure; fall back to the price book.
+        // `!= null` (not truthiness) — a free model legitimately bills 0.00, and
+        // that is an EXACT figure, not a missing one.
+        const estimated =
+          costFromApi == null
+            ? this.estimateCost?.(req.model, tokensIn, tokensOut) ?? null
+            : null;
         return {
           data: parsed.data,
           model: req.model,
           tokensIn,
           tokensOut,
-          costUsd: costFromApi ?? this.estimateCost?.(req.model, tokensIn, tokensOut) ?? null,
+          costUsd: costFromApi ?? estimated,
+          costSource:
+            costFromApi != null ? 'exact' : estimated != null ? 'estimated' : null,
           raw: lastRaw,
           attempts: attempt,
         };

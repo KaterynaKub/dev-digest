@@ -1,4 +1,12 @@
-import { pgTable, uuid, text, integer, jsonb, timestamp } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  jsonb,
+  timestamp,
+  doublePrecision,
+} from 'drizzle-orm/pg-core';
 import { workspaces } from './core';
 import { agents } from './agents';
 import { pullRequests } from './pulls';
@@ -28,6 +36,22 @@ export const agentRuns = pgTable('agent_runs', {
   score: integer('score'),
   /** Findings that tripped the agent's gate (severity ≥ ciFailOn). */
   blockers: integer('blockers'),
+  /**
+   * USD this run cost. NULL means "unknown" — an unfinished, failed or
+   * cancelled run — and must render as "—", never as $0.00. Note that 0 is a
+   * VALID cost (free models), so read this with `== null`, never truthiness.
+   */
+  costUsd: doublePrecision('cost_usd'),
+  /** 'exact' | 'estimated' | 'partial'. Null exactly when cost_usd is null. */
+  costSource: text('cost_source'),
+  /**
+   * PR head commit this run reviewed — the review-CYCLE key behind the PR-list
+   * COST column (we sum the runs whose head_sha = pull_requests.last_reviewed_sha).
+   * Written at run CREATION, because the author can push again before the run
+   * finishes and the diff was taken against this commit. NULL on rows recorded
+   * before this column existed: they belong to no cycle and show "—".
+   */
+  headSha: text('head_sha'),
 });
 
 /** Whole trace of one run as a SINGLE jsonb document. */

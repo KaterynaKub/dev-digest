@@ -83,6 +83,10 @@ export class ReviewRunExecutor {
             findingsCount: 0,
             grounding: '0/0 passed',
             error: msg,
+            // Explicit null, never 0: a run that never reached the model has no
+            // price, and the UI must render "—" rather than a fake "$0.00".
+            costUsd: null,
+            costSource: null,
           })
           .catch(() => undefined);
         await this.repo
@@ -210,7 +214,7 @@ export class ReviewRunExecutor {
           if (this.container.runBus.isCancelled(runId)) throw new RunCancelledError();
         },
       });
-      const { tokensIn, tokensOut, grounding } = outcome;
+      const { tokensIn, tokensOut, costUsd, costSource, grounding } = outcome;
 
       const keptFindings = outcome.review.findings;
 
@@ -250,6 +254,8 @@ export class ReviewRunExecutor {
         score: outcome.review.score,
         blockers,
         error: null,
+        costUsd,
+        costSource,
       });
 
       const trace: RunTrace = {
@@ -265,6 +271,8 @@ export class ReviewRunExecutor {
           duration_ms: durationMs,
           tokens_in: tokensIn,
           tokens_out: tokensOut,
+          cost_usd: costUsd,
+          cost_source: costSource,
           findings: findingRows.length,
           grounding,
         },
@@ -303,6 +311,12 @@ export class ReviewRunExecutor {
           findingsCount: 0,
           grounding: '0/0 passed',
           error: msg,
+          // Explicit null, never 0. NOTE: a run cancelled midway through
+          // map-reduce HAS already spent money, but the outcome (and with it the
+          // partial cost) is lost to the throw — we'd rather under-report than
+          // show a figure we cannot stand behind. See server/INSIGHTS.md.
+          costUsd: null,
+          costSource: null,
         })
         .catch(() => undefined);
       await this.repo
@@ -421,7 +435,17 @@ export class ReviewRunExecutor {
         pr: pull.number,
         source: 'local',
       },
-      stats: { duration_ms: durationMs, tokens_in: 0, tokens_out: 0, findings: 0, grounding },
+      // cost stays null (not 0) — this trace describes a run that failed or was
+      // cancelled, and an unknown price must render as "—".
+      stats: {
+        duration_ms: durationMs,
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: null,
+        cost_source: null,
+        findings: 0,
+        grounding,
+      },
       prompt_assembly: { system: agent.systemPrompt, skills: null, memory: null, specs: null, user: '' },
       tool_calls: [],
       raw_output: '',

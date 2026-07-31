@@ -7,7 +7,7 @@ import * as t from '../../db/schema.js';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
-import { deriveReviewStatus } from './status.js';
+import { deriveReviewStatus, foldCycleCost } from './status.js';
 
 /**
  * F1 — pulls module. PR import via Octokit (list + per-PR detail).
@@ -129,9 +129,41 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       }
     }
 
+    // Cost of the latest review CYCLE per PR. A "cycle" is every finished run
+    // that reviewed the commit the PR was last reviewed at — hence the join on
+    // head_sha = last_reviewed_sha. Runs recorded before head_sha was tracked
+    // are NULL there, match nothing, and correctly surface as "—".
+    const costByPr = new Map<string, ReturnType<typeof foldCycleCost>>();
+    if (prIds.length > 0) {
+      const costRows = await container.db
+        .select({
+          prId: t.agentRuns.prId,
+          costUsd: t.agentRuns.costUsd,
+          costSource: t.agentRuns.costSource,
+        })
+        .from(t.agentRuns)
+        .innerJoin(t.pullRequests, eq(t.pullRequests.id, t.agentRuns.prId))
+        .where(
+          and(
+            inArray(t.agentRuns.prId, prIds),
+            eq(t.agentRuns.status, 'done'),
+            eq(t.agentRuns.headSha, t.pullRequests.lastReviewedSha),
+          ),
+        );
+      const runsByPr = new Map<string, { costUsd: number | null; costSource: string | null }[]>();
+      for (const row of costRows) {
+        if (!row.prId) continue;
+        const bucket = runsByPr.get(row.prId) ?? [];
+        bucket.push({ costUsd: row.costUsd, costSource: row.costSource });
+        runsByPr.set(row.prId, bucket);
+      }
+      for (const [prId, runs] of runsByPr) costByPr.set(prId, foldCycleCost(runs));
+    }
+
     const now = Date.now();
     return rows.map((r) => {
       const review = latestReviewByPr.get(r.id);
+      const cost = costByPr.get(r.id);
       return {
         id: r.id,
         number: r.number,
@@ -153,6 +185,8 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         opened_at: r.openedAt?.toISOString() ?? null,
         updated_at: r.updatedAt?.toISOString() ?? null,
         score: review ? review.score : null,
+        cost_usd: cost?.usd ?? null,
+        cost_source: cost?.source ?? null,
       };
     });
   });

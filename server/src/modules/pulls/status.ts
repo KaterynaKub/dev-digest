@@ -1,4 +1,4 @@
-import type { PrStatus } from '@devdigest/shared';
+import type { CostSource, PrStatus } from '@devdigest/shared';
 
 /**
  * PR-list rollup helpers (pure — no DB / `this`, so they unit-test cleanly).
@@ -52,4 +52,36 @@ export function deriveReviewStatus(args: {
   const staleMs = (args.staleDays ?? STALE_DAYS) * 86_400_000;
   if (updatedAt && now - updatedAt.getTime() > staleMs) return 'stale';
   return 'reviewed';
+}
+
+/**
+ * Fold the runs of ONE review cycle into the single figure the PR list shows.
+ *
+ * Summing in JS rather than SQL is deliberate: we need to carry the cost SOURCE
+ * alongside the total, and `SUM()` silently skips NULLs — which would hide the
+ * fact that part of the cycle had no price at all.
+ *
+ * Degrades to the worst state seen: an unpriced run (or one already flagged
+ * 'partial') makes the whole cycle a LOWER BOUND; otherwise a single price-book
+ * estimate makes it 'estimated'. Returns a null total only when NOTHING was
+ * known, so the UI can render "—" instead of a fabricated $0.00.
+ */
+export function foldCycleCost(
+  runs: { costUsd: number | null; costSource: string | null }[],
+): { usd: number | null; source: CostSource | null } {
+  let sum: number | null = null;
+  let missing = false;
+  let estimated = false;
+  for (const r of runs) {
+    // `== null`, not truthiness — a free model legitimately costs 0.
+    if (r.costUsd == null) {
+      missing = true;
+      continue;
+    }
+    sum = (sum ?? 0) + r.costUsd;
+    if (r.costSource === 'estimated') estimated = true;
+    if (r.costSource === 'partial') missing = true;
+  }
+  if (sum == null) return { usd: null, source: null };
+  return { usd: sum, source: missing ? 'partial' : estimated ? 'estimated' : 'exact' };
 }

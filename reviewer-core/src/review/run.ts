@@ -107,7 +107,18 @@ export interface ReviewOutcome {
   chunks: { label: string }[];
   tokensIn: number;
   tokensOut: number;
+  /**
+   * Summed USD across chunks. Null ONLY when no chunk produced a price — a
+   * single unpriced chunk must not discard what the others cost.
+   */
   costUsd: number | null;
+  /**
+   * How to read `costUsd`: 'exact' (every chunk was provider-billed),
+   * 'estimated' (at least one chunk came from the price book), 'partial' (at
+   * least one chunk had no price at all, so the sum is a LOWER BOUND), or null
+   * (nothing was known). Degrades exact → estimated → partial.
+   */
+  costSource: 'exact' | 'estimated' | 'partial' | null;
   /** Joined raw model outputs (for the run trace). */
   raw: string;
 }
@@ -156,7 +167,12 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewOutco
   const partials: Review[] = [];
   let tokensIn = 0;
   let tokensOut = 0;
-  let costUsd: number | null = 0;
+  // Cost accumulates as a SUM of what we actually know, never as an all-or-nothing
+  // figure: `costSum` stays null until the first priced chunk, and an unpriced
+  // chunk only sets `anyMissing` (which downgrades the source to 'partial').
+  let costSum: number | null = null;
+  let anyEstimated = false;
+  let anyMissing = false;
   const raws: string[] = [];
 
   for (const chunk of chunks) {
@@ -181,7 +197,13 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewOutco
     });
     tokensIn += res.tokensIn;
     tokensOut += res.tokensOut;
-    costUsd = costUsd == null || res.costUsd == null ? null : costUsd + res.costUsd;
+    // `== null`, not truthiness — a free model legitimately costs 0.
+    if (res.costUsd == null) {
+      anyMissing = true;
+    } else {
+      costSum = (costSum ?? 0) + res.costUsd;
+      if (res.costSource === 'estimated') anyEstimated = true;
+    }
     raws.push(res.raw);
     partials.push(res.data);
     emit('result', `${chunk.label}: ${res.data.findings.length} candidate finding(s)`);
@@ -213,7 +235,11 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewOutco
     chunks: chunks.map((c) => ({ label: c.label })),
     tokensIn,
     tokensOut,
-    costUsd,
+    costUsd: costSum,
+    // Worst state wins: incompleteness ('partial') is a bigger caveat than
+    // imprecision ('estimated').
+    costSource:
+      costSum == null ? null : anyMissing ? 'partial' : anyEstimated ? 'estimated' : 'exact',
     raw: raws.join('\n---\n'),
   };
 }

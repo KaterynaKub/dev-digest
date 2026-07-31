@@ -77,12 +77,15 @@ export class AnthropicProvider implements LLMProvider {
       .join('');
     const tokensIn = res.usage.input_tokens;
     const tokensOut = res.usage.output_tokens;
+    const costUsd = estimateCost(req.model, tokensIn, tokensOut);
     return {
       text,
       model: req.model,
       tokensIn,
       tokensOut,
-      costUsd: estimateCost(req.model, tokensIn, tokensOut),
+      // Anthropic's API never reports what it billed, so cost is always price-book math.
+      costUsd,
+      costSource: costUsd == null ? null : 'estimated',
     };
   }
 
@@ -127,12 +130,15 @@ export class AnthropicProvider implements LLMProvider {
 
       const parsed = parseWithRepair(req.schema, lastRaw);
       if (parsed.ok) {
+        const structuredCost = estimateCost(req.model, tokensIn, tokensOut);
         return {
           data: parsed.data,
           model: req.model,
           tokensIn,
           tokensOut,
-          costUsd: estimateCost(req.model, tokensIn, tokensOut),
+          // Price-book math — Anthropic never reports what it actually billed.
+          costUsd: structuredCost,
+          costSource: structuredCost == null ? null : 'estimated',
           raw: lastRaw,
           attempts: attempt,
         };

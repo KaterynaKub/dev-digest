@@ -208,6 +208,13 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     expect(run!.status).toBe('done');
     expect(run!.findingsCount).toBe(1);
     expect(run!.grounding).toBe('1/2 passed');
+    // Cost survives the whole path: provider → ReviewOutcome → agent_runs.
+    // MockLLMProvider bills a flat 0.001 and reports it as an exact figure.
+    expect(run!.costUsd).toBeCloseTo(0.001, 10);
+    expect(run!.costSource).toBe('exact');
+    // The commit this run reviewed — the key the PR-list cost rollup groups on.
+    expect(run!.headSha).toBe(pr!.headSha);
+    expect(trace.stats.cost_usd).toBeCloseTo(0.001, 10);
 
     await app.close();
   });
