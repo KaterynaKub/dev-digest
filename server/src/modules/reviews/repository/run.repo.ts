@@ -64,6 +64,8 @@ export async function listRunsForPull(
     ran_at: run.ranAt ? run.ranAt.toISOString() : null,
     score: run.score,
     blockers: run.blockers,
+    cost_usd: run.costUsd,
+    cost_source: run.costSource as RunSummary['cost_source'],
   }));
 }
 
@@ -121,6 +123,12 @@ export async function createAgentRun(
     prId: string;
     provider: string | null;
     model: string | null;
+    /**
+     * PR head sha at queue time — the review-cycle key for cost rollups.
+     * Recorded HERE rather than at completion: the author can push again while
+     * the run is in flight, and the diff was taken against THIS commit.
+     */
+    headSha: string | null;
   },
 ): Promise<string> {
   const [row] = await db
@@ -131,6 +139,7 @@ export async function createAgentRun(
       prId: values.prId,
       provider: values.provider,
       model: values.model,
+      headSha: values.headSha,
       status: 'running',
       source: 'local',
     })
@@ -154,6 +163,10 @@ export async function completeAgentRun(
     blockers?: number | null;
     /** Failure reason (status='failed') / cancellation note. Null clears it. */
     error?: string | null;
+    /** USD this run cost. Null = unknown — pass null, NEVER 0, on failure. */
+    costUsd?: number | null;
+    /** 'exact' | 'estimated' | 'partial'. Null exactly when costUsd is null. */
+    costSource?: string | null;
   },
 ): Promise<void> {
   await db
@@ -168,6 +181,8 @@ export async function completeAgentRun(
       score: values.score ?? null,
       blockers: values.blockers ?? null,
       error: values.error ?? null,
+      costUsd: values.costUsd ?? null,
+      costSource: values.costSource ?? null,
     })
     .where(eq(t.agentRuns.id, runId));
 }

@@ -123,6 +123,8 @@ export class ReviewService {
         prId,
         provider: agent.provider,
         model: agent.model,
+        // Pin the commit this run reviews — the cost rollup groups runs by it.
+        headSha: pull.headSha,
       });
       runs.push({ run_id: runId, agent_id: agent.id, agent_name: agent.name });
       jobs.push({ agent, runId });

@@ -4,6 +4,7 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Badge, Icon, CircularScore, type IconName } from "@devdigest/ui";
 import type { RunSummary, PrCommit } from "@devdigest/shared";
+import { RunCostBadge } from "@/components/run-cost-badge";
 
 /**
  * PR timeline — every agent run interleaved with the PR's commits, newest-first
@@ -196,6 +197,18 @@ export function RunHistory({
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
+              {/* Usage only once the run settled — an in-flight run has no
+                  final token count, and no price we would stand behind. */}
+              {settled && (
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {r.tokens_in != null && r.tokens_out != null && (
+                    <span className="tnum">
+                      {(r.tokens_in + r.tokens_out).toLocaleString()} tok
+                    </span>
+                  )}
+                  <RunCostBadge costUsd={r.cost_usd} costSource={r.cost_source} />
+                </span>
+              )}
               {r.ran_at && <span>{new Date(r.ran_at).toLocaleTimeString()}</span>}
             </div>
             <button

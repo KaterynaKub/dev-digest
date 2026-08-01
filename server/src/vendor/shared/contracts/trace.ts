@@ -58,10 +58,23 @@ export const MemoryPulled = z.object({
 });
 export type MemoryPulled = z.infer<typeof MemoryPulled>;
 
+/**
+ * How to read a cost figure. 'exact' = the provider billed it; 'estimated' =
+ * price-book math; 'partial' = a LOWER BOUND (some steps had no price at all).
+ */
+export const CostSource = z.enum(['exact', 'estimated', 'partial']);
+export type CostSource = z.infer<typeof CostSource>;
+
 export const RunStats = z.object({
   duration_ms: z.number().int(),
   tokens_in: z.number().int(),
   tokens_out: z.number().int(),
+  // `nullish` (not `nullable`) is load-bearing: RunStats lives inside the
+  // `run_traces.trace` jsonb document, and traces persisted before these fields
+  // existed OMIT them entirely. `nullable` alone would fail to parse every one
+  // of those older traces. Null/absent = unknown — render "—", never "$0.00".
+  cost_usd: z.number().nullish(),
+  cost_source: CostSource.nullish(),
   findings: z.number().int(),
   grounding: z.string(),
 });
@@ -105,6 +118,10 @@ export const RunSummary = z.object({
   findings_count: z.number().int().nullable(),
   grounding: z.string().nullable(),
   ran_at: z.string().nullable(),
+  // Built row-by-row from `agent_runs`, so the fields are always present (if
+  // null) — `nullable` keeps TS honest about filling them in the mapper.
+  cost_usd: z.number().nullable(),
+  cost_source: CostSource.nullable(),
   // Review outcome, denormalized onto the run row at completion (the timeline
   // has no FK to the review). score = the review's 0-100 score; blockers =
   // findings that trip the agent's gate. Null on failed/cancelled runs.

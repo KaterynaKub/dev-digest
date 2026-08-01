@@ -5,6 +5,7 @@ import type {
   IssueMeta,
   PrReviewComment,
 } from './contracts/platform.js';
+import type { CostSource } from './contracts/trace.js';
 
 /**
  * Adapter interfaces. ALL external calls go behind these interfaces.
@@ -40,12 +41,23 @@ export interface CompletionRequest {
   timeoutMs?: number;
 }
 
+/**
+ * Where a `costUsd` figure came from, narrowed to what a single provider call
+ * can produce: 'exact' = the provider billed us that amount (OpenRouter's
+ * `usage.cost`); 'estimated' = we multiplied tokens by a price book. The third
+ * member of `CostSource`, 'partial', only arises when AGGREGATING several calls
+ * — see `ReviewOutcome` in reviewer-core.
+ */
+export type ProviderCostSource = Exclude<CostSource, 'partial'>;
+
 export interface CompletionResult {
   text: string;
   model: string;
   tokensIn: number;
   tokensOut: number;
   costUsd: number | null;
+  /** How to read `costUsd`. Null exactly when `costUsd` is null. */
+  costSource: ProviderCostSource | null;
 }
 
 /**
@@ -75,6 +87,8 @@ export interface StructuredResult<T> {
   tokensIn: number;
   tokensOut: number;
   costUsd: number | null;
+  /** How to read `costUsd`. Null exactly when `costUsd` is null. */
+  costSource: ProviderCostSource | null;
   raw: string;
   attempts: number;
 }

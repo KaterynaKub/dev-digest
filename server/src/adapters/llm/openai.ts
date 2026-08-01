@@ -76,12 +76,15 @@ export class OpenAIProvider implements LLMProvider {
     const text = res.choices?.[0]?.message?.content ?? '';
     const tokensIn = res.usage?.prompt_tokens ?? 0;
     const tokensOut = res.usage?.completion_tokens ?? 0;
+    const costUsd = estimateCost(req.model, tokensIn, tokensOut);
     return {
       text,
       model: req.model,
       tokensIn,
       tokensOut,
-      costUsd: estimateCost(req.model, tokensIn, tokensOut),
+      // OpenAI's API never reports what it billed, so cost is always price-book math.
+      costUsd,
+      costSource: costUsd == null ? null : 'estimated',
     };
   }
 
@@ -114,12 +117,15 @@ export class OpenAIProvider implements LLMProvider {
 
       const parsed = parseWithRepair(req.schema, lastRaw);
       if (parsed.ok) {
+        const structuredCost = estimateCost(req.model, tokensIn, tokensOut);
         return {
           data: parsed.data,
           model: req.model,
           tokensIn,
           tokensOut,
-          costUsd: estimateCost(req.model, tokensIn, tokensOut),
+          // Price-book math — OpenAI never reports what it actually billed.
+          costUsd: structuredCost,
+          costSource: structuredCost == null ? null : 'estimated',
           raw: lastRaw,
           attempts: attempt,
         };

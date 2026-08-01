@@ -144,6 +144,8 @@ export class ReviewRepository {
     prId: string;
     provider: string | null;
     model: string | null;
+    /** PR head sha at queue time — the review-cycle key for cost rollups. */
+    headSha: string | null;
   }): Promise<string> {
     return runRepo.createAgentRun(this.db, values);
   }
@@ -163,6 +165,10 @@ export class ReviewRepository {
       blockers?: number | null;
       /** Failure reason (status='failed') / cancellation note. Null clears it. */
       error?: string | null;
+      /** USD this run cost. Null = unknown — pass null, NEVER 0, on failure. */
+      costUsd?: number | null;
+      /** 'exact' | 'estimated' | 'partial'. Null exactly when costUsd is null. */
+      costSource?: string | null;
     },
   ): Promise<void> {
     return runRepo.completeAgentRun(this.db, runId, values);

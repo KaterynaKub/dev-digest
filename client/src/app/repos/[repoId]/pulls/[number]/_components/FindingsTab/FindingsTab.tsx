@@ -41,6 +41,14 @@ export function FindingsTab({
   onDelete,
   onRunDone,
 }: FindingsTabProps) {
+  // A ReviewRecord carries no cost — the figure lives on the agent run that
+  // produced it, which we already hold. Index the runs so each accordion can be
+  // handed its own cost without refetching.
+  const runById = React.useMemo(
+    () => new Map((prRuns ?? []).map((r) => [r.run_id, r])),
+    [prRuns],
+  );
+
   const handleCancelAll = useCallback(() => {
     liveRunIds.forEach((id) => cancelMutation.mutate(id));
   }, [liveRunIds, cancelMutation]);
@@ -162,6 +170,8 @@ export function FindingsTab({
             defaultOpen={i === 0}
             repoFullName={repoFullName}
             headSha={headSha}
+            costUsd={review.run_id ? runById.get(review.run_id)?.cost_usd ?? null : null}
+            costSource={review.run_id ? runById.get(review.run_id)?.cost_source ?? null : null}
             targetRunId={target?.runId ?? null}
             targetNonce={target?.n ?? 0}
           />

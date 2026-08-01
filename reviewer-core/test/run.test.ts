@@ -116,6 +116,7 @@ describe('reviewPullRequest (engine)', () => {
           tokensIn: 0,
           tokensOut: 0,
           costUsd: 0,
+          costSource: 'exact',
           raw: '',
           attempts: 1,
         };
