@@ -100,6 +100,10 @@ export function CategoryTag({ category }: { category: Category }) {
         fontSize: 12,
         color: "var(--text-muted)",
         fontWeight: 500,
+        // A trailing tag beside an elastic title: the title takes the ellipsis,
+        // the tag keeps its width and stays on one line.
+        whiteSpace: "nowrap",
+        flexShrink: 0,
       }}
     >
       <I size={12} />

@@ -79,6 +79,19 @@ export function FindingsTab({
     setTarget((p) => ({ runId, n: (p?.n ?? 0) + 1 }));
   }, []);
 
+  // Per-run findings for the timeline's severity chips. Joined from the reviews
+  // we already hold (review.run_id ↔ run.run_id), so the timeline needs no
+  // extra request. One run can yield more than one review row, hence the concat.
+  const findingsByRunId = React.useMemo(() => {
+    const m = new Map<string, FindingRecord[]>();
+    for (const review of runs) {
+      if (!review.run_id) continue;
+      const prev = m.get(review.run_id);
+      m.set(review.run_id, prev ? [...prev, ...review.findings] : review.findings);
+    }
+    return m;
+  }, [runs]);
+
   return (
     <section>
       {liveRunIds.length > 0 && (
@@ -139,6 +152,9 @@ export function FindingsTab({
           <RunHistory
             runs={prRuns ?? []}
             commits={prCommits}
+            findingsByRunId={findingsByRunId}
+            repoFullName={repoFullName}
+            headSha={headSha}
             onOpenTrace={handleOpenTrace}
             onGoToReview={handleGoToReview}
             onDelete={handleDelete}

@@ -87,3 +87,55 @@ export const FindingAction = z.object({
   reply: z.string().optional(),
 });
 export type FindingAction = z.infer<typeof FindingAction>;
+
+// ---- Findings roll-up (PR list column + timeline hover panel) ----
+
+/** Per-severity counts. All three keys are always present (zero when absent). */
+export const SeverityCounts = z.object({
+  CRITICAL: z.number().int().nonnegative(),
+  WARNING: z.number().int().nonnegative(),
+  SUGGESTION: z.number().int().nonnegative(),
+});
+export type SeverityCounts = z.infer<typeof SeverityCounts>;
+
+/**
+ * Compact projection of a Finding for hover/preview surfaces. Deliberately NOT
+ * `Finding`: `rationale` is truncated server-side and `suggestion`/`evidence`/
+ * trifecta fields are omitted, so shipping every PR's findings on the list
+ * endpoint stays cheap.
+ */
+export const FindingSummary = z.object({
+  id: z.string(),
+  severity: Severity,
+  category: FindingCategory,
+  title: z.string(),
+  file: z.string(),
+  start_line: z.number().int(),
+  end_line: z.number().int(),
+  /** Truncated to RATIONALE_PREVIEW_CHARS on a word boundary, with an ellipsis. */
+  rationale: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type FindingSummary = z.infer<typeof FindingSummary>;
+
+/**
+ * Findings roll-up attached to a PR list row. `counts` covers ALL of the latest
+ * review's findings; `items` is capped, so `truncated` drives a "+N more" hint.
+ */
+export const PrFindings = z.object({
+  counts: SeverityCounts,
+  /** Severity-ordered (CRITICAL first), capped at FINDINGS_PREVIEW_LIMIT. */
+  items: z.array(FindingSummary),
+  /** Total findings minus items.length. */
+  truncated: z.number().int().nonnegative(),
+});
+export type PrFindings = z.infer<typeof PrFindings>;
+
+/** Caps for the eager list payload — the hover panel is a preview, not a browser. */
+export const FINDINGS_PREVIEW_LIMIT = 12;
+/**
+ * Sized to the hover panel's 2-line clamp: ~356px of usable width at 12px
+ * renders ~65 chars/line, so ~130 chars fill the clamp. The margin above that
+ * keeps the CSS ellipsis — not this cut — the thing users see.
+ */
+export const RATIONALE_PREVIEW_CHARS = 150;

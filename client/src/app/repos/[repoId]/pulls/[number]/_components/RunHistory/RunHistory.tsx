@@ -2,9 +2,11 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Badge, Icon, CircularScore, type IconName } from "@devdigest/ui";
-import type { RunSummary, PrCommit } from "@devdigest/shared";
+import { Badge, Icon, CircularScore, FindingsSeverityRow, type IconName } from "@devdigest/ui";
+import type { RunSummary, PrCommit, FindingRecord } from "@devdigest/shared";
 import { RunCostBadge } from "@/components/run-cost-badge";
+import { toSeverityFindings } from "@/lib/findings-view";
+import { useFindingsLabels } from "@/lib/use-findings-labels";
 
 /**
  * PR timeline — every agent run interleaved with the PR's commits, newest-first
@@ -16,6 +18,11 @@ import { RunCostBadge } from "@/components/run-cost-badge";
  * run that found blockers reads "rejected" (red), never a green "done". Outcome
  * is derived from the denormalized blocker/finding counts on the run row, so it
  * matches the CI gate (deterministic) rather than the model's verdict.
+ *
+ * Note the badge and the severity chips can legitimately disagree: `blockers`
+ * is denormalized at run time and never re-counted, while the chips reflect the
+ * findings as they stand now (dismissed ones excluded). The badge is a record of
+ * what the run concluded; the chips are the current state.
  */
 
 type Outcome = { key: string; color: string; bg: string; icon: IconName };
@@ -88,12 +95,20 @@ function tsOf(s: string | null | undefined): number {
 export function RunHistory({
   runs,
   commits = [],
+  findingsByRunId,
+  repoFullName,
+  headSha,
   onOpenTrace,
   onGoToReview,
   onDelete,
 }: {
   runs: RunSummary[];
   commits?: PrCommit[];
+  /** This run's findings, keyed by run_id — joined from the reviews already loaded. */
+  findingsByRunId?: Map<string, FindingRecord[]>;
+  /** owner/repo + head sha — deep-links a finding's file:line to GitHub. */
+  repoFullName?: string | null;
+  headSha?: string | null;
   /** Open the trace + log drawer for a run (the logs icon). */
   onOpenTrace: (runId: string) => void;
   /** Jump to this run's inline review accordion below (clicking the agent name). */
@@ -101,6 +116,7 @@ export function RunHistory({
   onDelete?: (runId: string) => void;
 }) {
   const t = useTranslations("prReview");
+  const findingsLabels = useFindingsLabels();
   if (runs.length === 0 && commits.length === 0) return null;
 
   const items: TimelineItem[] = [
@@ -150,6 +166,15 @@ export function RunHistory({
         const r = item.run;
         const o = outcomeOf(r);
         const settled = r.status === "done";
+        const runFindings = toSeverityFindings(
+          findingsByRunId?.get(r.run_id) ?? [],
+          repoFullName,
+          headSha,
+        );
+        // The runs and reviews queries settle independently. Until the reviews
+        // arrive (or if the review row was deleted) fall back to the run's own
+        // denormalized count rather than claiming there are no findings.
+        const findingsPending = runFindings.length === 0 && (r.findings_count ?? 0) > 0;
         return (
           <div key={`run:${r.run_id}`} style={rowStyle}>
             <Badge color={o.color} bg={o.bg} icon={o.icon}>
@@ -189,12 +214,26 @@ export function RunHistory({
                   {r.error}
                 </div>
               )}
-              {settled && (
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  {t("runStatus.findings", { count: r.findings_count ?? 0 })}
-                  {(r.blockers ?? 0) > 0 ? t("runStatus.blockers", { count: r.blockers ?? 0 }) : ""}
-                </div>
-              )}
+              {settled &&
+                (findingsPending ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    {t("runStatus.findings", { count: r.findings_count ?? 0 })}
+                    {(r.blockers ?? 0) > 0
+                      ? t("runStatus.blockers", { count: r.blockers ?? 0 })
+                      : ""}
+                  </div>
+                ) : (
+                  <FindingsSeverityRow
+                    findings={runFindings}
+                    align="left"
+                    labels={findingsLabels}
+                    emptyPlaceholder={
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        {t("runStatus.noFindings")}
+                      </span>
+                    }
+                  />
+                ))}
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
               {/* Usage only once the run settled — an in-flight run has no

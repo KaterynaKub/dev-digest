@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Provider } from './knowledge.js';
 import { CostSource } from './trace.js';
+import { PrFindings } from './findings.js';
 
 /**
  * Platform / scaffolding DTOs owned by F1:
@@ -176,6 +177,13 @@ export const PrMeta = z.object({
   // reviewed, and for runs recorded before head_sha was tracked.
   cost_usd: z.number().nullish(),
   cost_source: CostSource.nullish(),
+  /**
+   * Latest-review findings roll-up + a capped preview. Eager on purpose: the
+   * FINDINGS column's hover panel must open with zero network work.
+   * LIST ENDPOINT ONLY — always undefined on PrDetail, where the full findings
+   * come from GET /pulls/:id/reviews instead.
+   */
+  findings: PrFindings.nullish(),
 });
 export type PrMeta = z.infer<typeof PrMeta>;
 
