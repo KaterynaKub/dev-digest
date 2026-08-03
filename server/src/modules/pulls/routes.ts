@@ -8,6 +8,12 @@ import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { deriveReviewStatus, foldCycleCost } from './status.js';
+import {
+  buildPrFindings,
+  selectCycleReviewIds,
+  type CycleReviewRow,
+  type FindingSummaryRow,
+} from './findings-summary.js';
 
 /**
  * F1 — pulls module. PR import via Octokit (list + per-PR detail).
@@ -111,32 +117,22 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       }
     }
 
-    // Latest-review SCORE per PR for the list's score ring. Computed on read
-    // from reviews (no FK denorm); the list is small, so one IN-query + JS
-    // grouping is cheap. (The per-severity FINDINGS breakdown is intentionally
-    // not surfaced on the list — findings live on the PR detail page.)
+    // The latest review CYCLE drives BOTH the COST and the FINDINGS column. A
+    // "cycle" is every finished run that reviewed the commit the PR was last
+    // reviewed at — hence the join on head_sha = last_reviewed_sha — i.e. all
+    // reviewers of the last trigger. Runs recorded before head_sha was tracked
+    // are NULL there, match nothing, and correctly surface as "—" / fall back
+    // to the newest single review.
+    //
+    // Fetched once and shared: a cost that covers three reviewers next to
+    // findings from only one would read as a bug.
     const prIds = rows.map((r) => r.id);
-    const latestReviewByPr = new Map<string, { score: number | null }>();
-    if (prIds.length > 0) {
-      const reviewRows = await container.db
-        .select({ prId: t.reviews.prId, score: t.reviews.score })
-        .from(t.reviews)
-        .where(and(inArray(t.reviews.prId, prIds), eq(t.reviews.kind, 'review')))
-        .orderBy(desc(t.reviews.createdAt));
-      // Rows are newest-first → first seen per PR is the latest review.
-      for (const rv of reviewRows) {
-        if (!latestReviewByPr.has(rv.prId)) latestReviewByPr.set(rv.prId, { score: rv.score });
-      }
-    }
-
-    // Cost of the latest review CYCLE per PR. A "cycle" is every finished run
-    // that reviewed the commit the PR was last reviewed at — hence the join on
-    // head_sha = last_reviewed_sha. Runs recorded before head_sha was tracked
-    // are NULL there, match nothing, and correctly surface as "—".
     const costByPr = new Map<string, ReturnType<typeof foldCycleCost>>();
+    const cycleRunIdsByPr = new Map<string, Set<string>>();
     if (prIds.length > 0) {
-      const costRows = await container.db
+      const cycleRuns = await container.db
         .select({
+          id: t.agentRuns.id,
           prId: t.agentRuns.prId,
           costUsd: t.agentRuns.costUsd,
           costSource: t.agentRuns.costSource,
@@ -151,18 +147,91 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
           ),
         );
       const runsByPr = new Map<string, { costUsd: number | null; costSource: string | null }[]>();
-      for (const row of costRows) {
+      for (const row of cycleRuns) {
         if (!row.prId) continue;
         const bucket = runsByPr.get(row.prId) ?? [];
         bucket.push({ costUsd: row.costUsd, costSource: row.costSource });
         runsByPr.set(row.prId, bucket);
+        const ids = cycleRunIdsByPr.get(row.prId) ?? new Set<string>();
+        ids.add(row.id);
+        cycleRunIdsByPr.set(row.prId, ids);
       }
       for (const [prId, runs] of runsByPr) costByPr.set(prId, foldCycleCost(runs));
     }
 
+    // SCORE + FINDINGS per PR. Computed on read from reviews (no FK denorm);
+    // the list is small, so two IN-queries + JS grouping are cheap.
+    //
+    // SCORE stays the LATEST review's — it is a single 0-100 verdict, and
+    // averaging across reviewers would invent a number no agent produced.
+    // FINDINGS, being a union, spans the whole cycle.
+    //
+    // The findings breakdown ships EAGERLY (rather than lazily on hover) so the
+    // column's hover panel opens with zero network work. To keep that
+    // affordable the preview is capped and rationales truncated — see
+    // ./findings-summary.js.
+    const latestScoreByPr = new Map<string, number | null>();
+    const reviewIdsByPr = new Map<string, string[]>();
+    if (prIds.length > 0) {
+      const reviewRows = await container.db
+        .select({
+          id: t.reviews.id,
+          prId: t.reviews.prId,
+          runId: t.reviews.runId,
+          score: t.reviews.score,
+          createdAt: t.reviews.createdAt,
+        })
+        .from(t.reviews)
+        .where(and(inArray(t.reviews.prId, prIds), eq(t.reviews.kind, 'review')))
+        .orderBy(desc(t.reviews.createdAt));
+      const byPr = new Map<string, CycleReviewRow[]>();
+      for (const rv of reviewRows) {
+        // Rows are newest-first → first seen per PR is the latest review.
+        if (!latestScoreByPr.has(rv.prId)) latestScoreByPr.set(rv.prId, rv.score);
+        const bucket = byPr.get(rv.prId);
+        if (bucket) bucket.push(rv);
+        else byPr.set(rv.prId, [rv]);
+      }
+      for (const [prId, reviews] of byPr) {
+        reviewIdsByPr.set(
+          prId,
+          selectCycleReviewIds(reviews, cycleRunIdsByPr.get(prId) ?? new Set()),
+        );
+      }
+    }
+
+    // Findings for every review in each PR's cycle. The explicit column list
+    // omits `suggestion` and `trifecta_components` — the two fat columns —
+    // which is where most of the payload saving comes from.
+    const cycleReviewIds = [...reviewIdsByPr.values()].flat();
+    const findingsByReview = new Map<string, FindingSummaryRow[]>();
+    if (cycleReviewIds.length > 0) {
+      const findingRows = await container.db
+        .select({
+          id: t.findings.id,
+          reviewId: t.findings.reviewId,
+          severity: t.findings.severity,
+          category: t.findings.category,
+          title: t.findings.title,
+          file: t.findings.file,
+          startLine: t.findings.startLine,
+          endLine: t.findings.endLine,
+          rationale: t.findings.rationale,
+          confidence: t.findings.confidence,
+          dismissedAt: t.findings.dismissedAt,
+        })
+        .from(t.findings)
+        .where(inArray(t.findings.reviewId, cycleReviewIds));
+      for (const f of findingRows) {
+        const bucket = findingsByReview.get(f.reviewId);
+        if (bucket) bucket.push(f);
+        else findingsByReview.set(f.reviewId, [f]);
+      }
+    }
+
     const now = Date.now();
     return rows.map((r) => {
-      const review = latestReviewByPr.get(r.id);
+      const cycleReviews = reviewIdsByPr.get(r.id);
       const cost = costByPr.get(r.id);
       return {
         id: r.id,
@@ -184,9 +253,15 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         }),
         opened_at: r.openedAt?.toISOString() ?? null,
         updated_at: r.updatedAt?.toISOString() ?? null,
-        score: review ? review.score : null,
+        score: latestScoreByPr.get(r.id) ?? null,
         cost_usd: cost?.usd ?? null,
         cost_source: cost?.source ?? null,
+        // Union of every reviewer in the cycle. null (not an empty roll-up)
+        // when the PR has never been reviewed, so the UI's "—" case matches the
+        // existing `score == null` convention.
+        findings: cycleReviews?.length
+          ? buildPrFindings(cycleReviews.flatMap((id) => findingsByReview.get(id) ?? []))
+          : null,
       };
     });
   });

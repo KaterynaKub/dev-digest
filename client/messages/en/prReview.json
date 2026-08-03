@@ -48,7 +48,20 @@
     "cancelled": "cancelled",
     "running": "running",
     "findings": "{count} finding(s)",
-    "blockers": " · {count} blockers"
+    "blockers": " · {count} blockers",
+    "noFindings": "No findings"
+  },
+  "findingsHover": {
+    "panelTitle": "Findings",
+    "chip": "{count} {severity} findings",
+    "filterHint": "showing {severity} — click again to clear",
+    "more": "+{count} more — open the pull request to see all",
+    "noneForSeverity": "No findings at this severity."
+  },
+  "severity": {
+    "CRITICAL": "critical",
+    "WARNING": "warning",
+    "SUGGESTION": "suggestion"
   },
   "smartDiff": {
     "coreLabel": "Core",
@@ -91,6 +104,7 @@
       "author": "Author",
       "size": "Size",
       "score": "Score",
+      "findings": "Findings",
       "cost": "Cost",
       "status": "Status",
       "updated": "Updated"

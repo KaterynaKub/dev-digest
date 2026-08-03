@@ -24,4 +24,21 @@ What happens, then why (the mechanism), then the rule that follows.
 
 ---
 
-_No insights recorded yet._
+## Tooling: an unresolved `pnpm-workspace.yaml` makes every `pnpm <script>` fail before the script runs
+
+**Found:** 2026-08-02 · **Applies to:** client/pnpm-workspace.yaml, server/pnpm-workspace.yaml
+
+`pnpm test` in `client/` and `server/` can abort with `ERR_PNPM_IGNORED_BUILDS`
+and `Command failed with exit code 1: ... pnpm install` without ever reaching
+vitest. The cause is not a broken test setup: pnpm runs a deps-status check
+before any script, and both packages have an untracked `pnpm-workspace.yaml`
+whose `allowBuilds:` entries are still literal placeholders —
+`esbuild: set this to true or false`, and likewise `sharp` (client) or
+`cpu-features`/`protobufjs`/`ssh2` (server). Until each is a real `true`/`false`
+the check fails, so the failure looks like a test failure but no test ran.
+
+Read the traceback before debugging tests: frames inside `pnpm.mjs` mean the
+package manager stopped, not the suite. To run tests without touching the file,
+skip the wrapper — `node node_modules/vitest/vitest.mjs run <filter>` from the
+package directory. Note `--dir` is overridden by the config's `include` and
+matches nothing; pass a bare substring as a positional filter instead.
