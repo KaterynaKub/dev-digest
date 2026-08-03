@@ -59,3 +59,41 @@ run is in flight and the diff was taken against the commit at queue time. Rows
 written before this column existed are NULL, match no cycle, and correctly show
 "—" — they were deliberately not backfilled, since the only available surrogate
 (`last_reviewed_sha`) would attribute old runs to a commit they never reviewed.
+
+## Trap: removing `Container` from services pushes the violation, it does not delete it
+
+**Found:** 2026-08-03 · **Applies to:** src/modules/*/service.ts, .dependency-cruiser.cjs
+
+Converting the services from `constructor(container: Container)` to explicit
+port objects cleared `service-no-container` (7 → 0) and every `no-circular`
+cycle except one — the cycles existed *because* `container.ts` did
+`new RepoIntelService(this)`.
+
+But the obvious first step, injecting `db: Db`, traded one violation for
+another: `service-no-sql` went 3 → 9, because `Db` lives in `src/db/client.ts`
+and the rule forbids all of `^src/db/`. Injecting the **repository** instead of
+the DB handle is what actually satisfies the layer. The same shuffle happens one
+level up: building repositories in `routes.ts` then trips
+`routes-no-persistence`, so they belong on the Container as lazy getters
+(`container.pollingRepo`) and `routes.ts` only forwards them.
+
+Net: 20 → 6 violations. Check the *whole* summary line after such a refactor —
+a rule that improves while its neighbour degrades looks like progress in the
+diff and is not.
+
+## Trap: `tsc -p tsconfig.json` does not cover `test/` — services can typecheck green and be broken
+
+**Found:** 2026-08-03 · **Applies to:** tsconfig.json, test/*.test.ts
+
+`server/tsconfig.json` sets `"include": ["src/**/*.ts"]`, so `pnpm typecheck`
+never sees `test/`. After changing every service constructor, typecheck was
+clean while four test files still passed the old shape. Only `pnpm test` caught
+it. Running `tsc` over `test/*.test.ts` directly does not substitute: without the
+project's `paths`, every `@devdigest/shared` import fails with TS2307 and buries
+the real errors. Change a constructor signature → run the suite, not the
+typechecker.
+
+The tests that broke were also the ones reaching furthest around the DI:
+`(svc as unknown as { repo: X }).repo = stub` to patch a private field after
+building the service from an `as never` container. With ports injected, that
+patching is gone — the stub is passed in as `repo`.

@@ -9,8 +9,13 @@ Search `../../../docs/`, `../../../specs/`, `../../../INSIGHTS.md` first.
 
 ## Conventions (not obvious from code)
 
-- Everything downstream goes through the facade (`container.repoIntel.*`,
-  contract in `types.ts`). Never import from `pipeline/` or hit the tables.
+- Everything downstream goes through the facade (contract in `types.ts`),
+  resolved once as `container.repoIntel` and injected as the `repoIntel` port —
+  consumers never reach for the container. Never import from `pipeline/` or hit
+  the tables.
+- The service and the pipeline share one port set: `RepoIntelDeps extends
+  IndexPipelineDeps`, so `this.deps` forwards straight into `runFullIndex` /
+  `runIncremental`.
 - Indexing happens on clone/fetch, never at request time.
 - Degrade, never throw: an unindexed repo returns empty results so callers fall
   back to diff-only.

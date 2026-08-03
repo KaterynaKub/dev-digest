@@ -14,7 +14,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
-import { RepoIntelService } from './service.js';
+import { RepoIntelService, repoIntelDeps } from './service.js';
 import { RESYNC_JOB_KIND } from './constants.js';
 import type { IndexState } from './types.js';
 
@@ -26,7 +26,7 @@ export default async function repoIntelRoutes(appBase: FastifyInstance) {
   // JobRunner stores the handler closure, not the service instance, and the
   // lazy `container.repoIntel` getter constructs its own service for read
   // calls. Both share the same DB, so behaviour is identical.
-  const service = new RepoIntelService(container);
+  const service = new RepoIntelService(repoIntelDeps(container));
   service.registerIndexJobHandlers();
 
   app.get(

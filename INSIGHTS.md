@@ -42,3 +42,41 @@ package manager stopped, not the suite. To run tests without touching the file,
 skip the wrapper — `node node_modules/vitest/vitest.mjs run <filter>` from the
 package directory. Note `--dir` is overridden by the config's `include` and
 matches nothing; pass a bare substring as a positional filter instead.
+
+The same bypass works for any tool in the package, but it must target the real
+entry point, not the shim: `node node_modules/.bin/depcruise` dies with
+`SyntaxError: missing ) after argument list`, because on Windows `.bin/` holds
+`sh` wrappers rather than JS. Resolve the path from the package's `bin` field
+instead — `node node_modules/dependency-cruiser/bin/dependency-cruise.mjs`,
+`node node_modules/typescript/bin/tsc`.
+
+---
+
+## Trap: `pnpm arch:check` exits 0 while reporting violations
+
+**Found:** 2026-08-03 · **Applies to:** server/.dependency-cruiser.cjs, reviewer-core/.dependency-cruiser.cjs
+
+dependency-cruiser is configured with `warn`-severity rules, so a run reporting
+`x 20 dependency violations (0 errors, 20 warnings)` still exits 0. Any gate,
+script, or CI step that judges `arch:check` by its exit code alone passes while
+every violation goes unseen — including layer breaches the rules exist to catch
+(`service-no-container`, `routes-no-persistence`, `no-circular`).
+
+Parse the summary line and the `warn` entries; treat the exit code as meaningful
+only for `error`-severity rules. Raise a rule to `error` when it should actually
+break the build.
+
+---
+
+## Trap: piping a check into `tail` or `head` silently discards its exit code
+
+**Found:** 2026-08-03 · **Applies to:** scripts/, .claude/hooks/
+
+`pnpm typecheck 2>&1 | tail -15` always reports success: in a pipeline `$?` is
+the exit status of the last command, and `tail` succeeds even when the check it
+is summarising failed. This is easy to miss precisely where it matters most —
+trimming a noisy tool's output while deciding whether the tool passed.
+
+Redirect to a file, capture the status, then read the file:
+`pnpm typecheck > /tmp/tc.log 2>&1; echo "exit=$?"`. Alternatively set
+`set -o pipefail`, which is not on by default in the `sh` used by git hooks.

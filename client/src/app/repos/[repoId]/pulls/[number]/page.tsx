@@ -8,19 +8,19 @@
 import React from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Skeleton, ErrorState } from "@devdigest/ui";
-import { AppShell } from "../../../../../components/app-shell";
+import { AppShell } from "@/components/app-shell";
 import { RepoNotFound } from "@/components/repo-not-found";
 import { PrDetailHeader } from "./_components/PrDetailHeader";
 import { OverviewTab } from "./_components/OverviewTab";
 import { FindingsTab } from "./_components/FindingsTab";
 import { DiffTab } from "./_components/DiffTab";
 import RunTraceDrawer from "./_components/RunTraceDrawer";
-import { usePullDetail, usePulls } from "../../../../../lib/hooks";
+import { usePullDetail, usePulls } from "@/lib/hooks";
 import { useQueryClient } from "@tanstack/react-query";
-import { usePrReviews, useCancelRun, usePrActiveRuns, usePrRuns, useDeleteRun } from "../../../../../lib/hooks/reviews";
-import { useActiveRepo, useRepoNotFound } from "../../../../../lib/repo-context";
-import { ApiError } from "../../../../../lib/api";
-import { githubPrUrl } from "../../../../../lib/github-urls";
+import { usePrReviews, useCancelRun, usePrActiveRuns, usePrRuns, useDeleteRun } from "@/lib/hooks/reviews";
+import { useActiveRepo, useRepoNotFound } from "@/lib/repo-context";
+import { ApiError } from "@/lib/api";
+import { githubPrUrl } from "@/lib/github-urls";
 import type { FindingRecord } from "@devdigest/shared";
 
 export default function PRDetailPage() {
@@ -69,10 +69,9 @@ export default function PRDetailPage() {
 
   // Reviews come newest-first; each is its own run (grouped into accordions).
   const runs = reviews ?? [];
-  const allFindings: FindingRecord[] = React.useMemo(
-    () => runs.flatMap((r) => r.findings),
-    [reviews],
-  );
+  // Cheap flatMap over an already-fetched list — derived during render rather
+  // than memoised (the previous useMemo keyed on `reviews` while reading `runs`).
+  const allFindings: FindingRecord[] = runs.flatMap((r) => r.findings);
   const lethalTrifecta = allFindings.filter((f) => f.kind === "lethal_trifecta");
   const findingsCount = allFindings.length;
 

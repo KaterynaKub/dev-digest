@@ -5,7 +5,7 @@ import type { RunEvent } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { NotFoundError } from '../../platform/errors.js';
-import { ReviewService } from './service.js';
+import { ReviewService, reviewDeps } from './service.js';
 
 /**
  * reviews module.
@@ -19,7 +19,7 @@ const FINDING_ACTIONS = ['accept', 'dismiss'] as const;
 export default async function reviewsRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
   const { container } = app;
-  const service = new ReviewService(container);
+  const service = new ReviewService(reviewDeps(container));
 
   // ---- Run a review (manual trigger) -------------------------------
   // Tight per-route limit: each call can fan out to expensive LLM runs.

@@ -1,10 +1,12 @@
-import type { Container } from '../../platform/container.js';
 import type { FindingActionKind, RunEventKind, RunTrace } from '@devdigest/shared';
+import type { RunBus } from '../../platform/sse.js';
+// AgentRow comes from the repository that owns it, not from db/rows directly —
+// the service layer stays clear of the persistence module.
+import type { AgentsRepository, AgentRow } from '../agents/repository.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
-import type { AgentRow } from '../../db/rows.js';
-import { ReviewRepository } from './repository.js';
+import type { ReviewRepository } from './repository.js';
 import { type ReviewDto, type ReviewDtoFinding } from './helpers.js';
-import { ReviewRunExecutor, type Logger } from './run-executor.js';
+import { ReviewRunExecutor, type ReviewRunDeps, type Logger } from './run-executor.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
 
@@ -19,21 +21,56 @@ export type { ReviewDto, ReviewDtoFinding } from './helpers.js';
  *        → llm.completeStructured({ schema: Review }) (single-pass)
  *        → groundFindings(...) (citation gate — drops findings off the diff)
  *        → persist reviews + kept findings (+ grounding summary)
- *   while streaming RunEvents over container.runBus, and on completion writing
+ *   while streaming RunEvents over the injected runBus, and on completion writing
  *   the whole log as ONE RunTrace doc + an agent_runs row.
  *
  * Also: the finding accept/dismiss actions. The bulky run execution lives in
  * run-executor; this class keeps the public method surface.
  */
+
+/**
+ * Ports this service needs. Injected explicitly — never the whole Container.
+ * Extends the executor's ports because it constructs (and forwards to) one.
+ */
+export interface ReviewDeps extends ReviewRunDeps {
+  repo: ReviewRepository;
+  agentsRepo: AgentsRepository;
+}
+
+/**
+ * Wire ReviewDeps from the composition root. Lives here (next to the port it
+ * satisfies) so both call sites — the routes and the boot-time reaper — build
+ * the same set; only `container.ts` and `app.ts` may call it.
+ */
+export function reviewDeps(container: {
+  reviewRepo: ReviewRepository;
+  agentsRepo: AgentsRepository;
+  git: ReviewRunDeps['git'];
+  runBus: RunBus;
+  repoIntel: ReviewRunDeps['repoIntel'];
+  llm: ReviewRunDeps['llm'];
+}): ReviewDeps {
+  return {
+    repo: container.reviewRepo,
+    agentsRepo: container.agentsRepo,
+    git: container.git,
+    runBus: container.runBus,
+    repoIntel: container.repoIntel,
+    llm: (provider) => container.llm(provider),
+  };
+}
+
 export class ReviewService {
   private repo: ReviewRepository;
-  private agents: Container['agentsRepo'];
+  private agents: AgentsRepository;
   private executor: ReviewRunExecutor;
+  private runBus: RunBus;
 
-  constructor(private container: Container) {
-    this.repo = new ReviewRepository(container.db);
-    this.agents = container.agentsRepo;
-    this.executor = new ReviewRunExecutor(container, this.repo, this.agents);
+  constructor(deps: ReviewDeps) {
+    this.repo = deps.repo;
+    this.agents = deps.agentsRepo;
+    this.runBus = deps.runBus;
+    this.executor = new ReviewRunExecutor(deps, this.repo, this.agents);
   }
 
   // ===========================================================================
@@ -84,9 +121,9 @@ export class ReviewService {
    */
   async cancelRun(runId: string): Promise<void> {
     this.publish(runId, 'info', 'Cancellation requested — stopping…');
-    this.container.runBus.cancel(runId);
+    this.runBus.cancel(runId);
     await this.repo.cancelRunIfRunning(runId);
-    this.container.runBus.complete(runId);
+    this.runBus.complete(runId);
   }
 
   /** Reap runs left 'running' by a previous (now-dead) process. Called on boot. */
@@ -140,7 +177,7 @@ export class ReviewService {
   }
 
   private publish(runId: string, kind: RunEventKind, msg: string, data?: unknown) {
-    return this.container.runBus.publish(runId, kind, msg, data);
+    return this.runBus.publish(runId, kind, msg, data);
   }
 
   // ===========================================================================

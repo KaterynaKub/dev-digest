@@ -11,7 +11,9 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "arch:check": "depcruise src --config .dependency-cruiser.cjs",
+    "arch:graph": "depcruise src --config .dependency-cruiser.cjs --output-type dot > arch.dot"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",

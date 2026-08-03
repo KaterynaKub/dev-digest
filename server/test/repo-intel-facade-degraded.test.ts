@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RepoIntelService } from '../src/modules/repo-intel/service.js';
-import type { RepoBasics } from '../src/modules/repo-intel/repository.js';
+import type { RepoBasics, RepoIntelRepository } from '../src/modules/repo-intel/repository.js';
 import type { IndexState } from '../src/modules/repo-intel/types.js';
 
 /**
@@ -11,8 +11,8 @@ import type { IndexState } from '../src/modules/repo-intel/types.js';
  * blast, hooks) downgrade to their pre-T1.3 behavior on these returns; if any
  * method threw or returned malformed shape, every consumer would crash.
  *
- * No Postgres, no clone. The service's `repo` (RepoIntelRepository) is patched
- * to return null/[] so we exercise the degraded paths cleanly.
+ * No Postgres, no clone. The repository stub returns null/[] so we exercise the
+ * degraded paths cleanly — injected as a port, not patched onto the instance.
  */
 
 function buildDegradedService(opts: {
@@ -20,24 +20,25 @@ function buildDegradedService(opts: {
   basics?: RepoBasics | null;
   indexStateRow?: IndexState | null;
 }): RepoIntelService {
-  const container = {
-    config: { repoIntelEnabled: opts.flag },
-    db: {} as never,
+  return new RepoIntelService({
+    repoIntelEnabled: opts.flag,
+    repo: {
+      getRepoBasics: async () => opts.basics ?? null,
+      tryGetIndexState: async () => opts.indexStateRow ?? null,
+      getCachedSymbols: async () => [],
+      getCachedSymbolsForFiles: async () => [],
+      getCachedReferencesTo: async () => [],
+    } as unknown as RepoIntelRepository,
     // codeIndex is reached by getBlastRadius; we stub minimal behaviour.
     codeIndex: {
       symbols: async () => [],
       references: async () => [],
     } as never,
-  } as never;
-  const svc = new RepoIntelService(container);
-  (svc as unknown as { repo: Record<string, unknown> }).repo = {
-    getRepoBasics: async () => opts.basics ?? null,
-    tryGetIndexState: async () => opts.indexStateRow ?? null,
-    getCachedSymbols: async () => [],
-    getCachedSymbolsForFiles: async () => [],
-    getCachedReferencesTo: async () => [],
-  };
-  return svc;
+    jobs: {} as never,
+    git: {} as never,
+    depgraph: {} as never,
+    tokenizer: {} as never,
+  });
 }
 
 describe('RepoIntel facade — degraded contract (flag off)', () => {

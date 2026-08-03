@@ -17,6 +17,8 @@ import type { FindingRow, PullRow } from '../../db/rows.js';
 export type { FindingRow, PullRow };
 
 export type ReviewRow = typeof t.reviews.$inferSelect;
+/** The repo row `getRepo` returns — re-exported so services never import db/schema. */
+export type RepoRow = typeof t.repos.$inferSelect;
 
 import * as reviewRepo from './repository/review.repo.js';
 import * as runRepo from './repository/run.repo.js';

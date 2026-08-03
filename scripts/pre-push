@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# Pre-push companion to the PR self-review gate.
+#
+# Install:  cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#
+# This hook cannot run the review — it has no access to skills. It only reads
+# the verdict `/pr-self-review` recorded, and stops a push that would lead to a
+# PR the gate would have refused. It exists to catch pushes made outside Claude
+# Code, from a terminal or an IDE.
+#
+# Override:  PR_SELF_REVIEW=skip git push
+
+[ "$PR_SELF_REVIEW" = "skip" ] && exit 0
+
+GIT_DIR_ABS=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
+RESULT="$GIT_DIR_ABS/pr-self-review-result.json"
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+# Pushing main is a separate workflow; the PR gate does not apply.
+[ "$BRANCH" = "main" ] && exit 0
+
+# No verdict recorded: warn, do not block. A terminal push is not yet a PR, and
+# the PreToolUse hook still guards `gh pr create` — the actual gate.
+if [ ! -f "$RESULT" ]; then
+  echo "pre-push: no PR self-review recorded for this branch." >&2
+  echo "          Run /pr-self-review before opening the PR." >&2
+  exit 0
+fi
+
+VERDICT=$(sed -n 's/.*"verdict"[[:space:]]*:[[:space:]]*"\([A-Z]*\)".*/\1/p' "$RESULT")
+
+if [ "$VERDICT" = "BLOCK" ]; then
+  echo "pre-push: BLOCKED — PR self-review found CRITICAL findings." >&2
+  echo "          Fix them and re-run /pr-self-review." >&2
+  echo "          Override with: PR_SELF_REVIEW=skip git push" >&2
+  exit 1
+fi
+
+REVIEWED=$(sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/p' "$RESULT")
+HEAD_SHA=$(git rev-parse HEAD 2>/dev/null)
+
+if [ -n "$REVIEWED" ] && [ "$REVIEWED" != "$HEAD_SHA" ]; then
+  echo "pre-push: PR self-review is stale (reviewed $(echo "$REVIEWED" | cut -c1-7), HEAD is $(echo "$HEAD_SHA" | cut -c1-7))." >&2
+  echo "          Re-run /pr-self-review before opening the PR." >&2
+fi
+
+exit 0

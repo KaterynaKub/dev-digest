@@ -1,7 +1,7 @@
-import type { Container } from '../../platform/container.js';
-import { type Repo } from '@devdigest/shared';
+import { type GitClient, type Repo, type SecretsProvider } from '@devdigest/shared';
+import type { JobRunner } from '../../platform/jobs.js';
 import { NotFoundError } from '../../platform/errors.js';
-import { RepoRepository } from './repository.js';
+import type { RepoRepository } from './repository.js';
 import { parseRepoUrl, withGitHubToken, toRepoDto } from './helpers.js';
 import {
   CLONE_JOB_KIND,
@@ -30,11 +30,22 @@ export interface CloneJobPayload {
   url: string;
 }
 
+/**
+ * Ports this service needs. Injected explicitly — never the whole Container,
+ * and never `Db`: persistence stays behind the repository.
+ */
+export interface RepoDeps {
+  repo: RepoRepository;
+  git: GitClient;
+  jobs: JobRunner;
+  secrets: SecretsProvider;
+}
+
 export class RepoService {
   private repo: RepoRepository;
 
-  constructor(private container: Container) {
-    this.repo = new RepoRepository(container.db);
+  constructor(private deps: RepoDeps) {
+    this.repo = deps.repo;
   }
 
   /**
@@ -43,16 +54,16 @@ export class RepoService {
    * then persists the resulting path + last_polled_at.
    */
   registerCloneJobHandler(): void {
-    this.container.jobs.register(CLONE_JOB_KIND, async (payload) => {
+    this.deps.jobs.register(CLONE_JOB_KIND, async (payload) => {
       await this.runCloneJob(payload as CloneJobPayload);
     });
   }
 
   async runCloneJob(payload: CloneJobPayload): Promise<void> {
     const { repoId, owner, name, url } = payload;
-    const token = await this.container.secrets.get(GITHUB_TOKEN_SECRET);
+    const token = await this.deps.secrets.get(GITHUB_TOKEN_SECRET);
     const cloneUrl = token ? withGitHubToken(url, token) : url;
-    const { path } = await this.container.git.clone({ owner, name }, cloneUrl, {
+    const { path } = await this.deps.git.clone({ owner, name }, cloneUrl, {
       depth: CLONE_DEPTH,
     });
     await this.repo.updateClonePath(repoId, path);
@@ -65,7 +76,7 @@ export class RepoService {
     const workspaceId = await this.repo.workspaceIdFor(repoId);
     if (workspaceId) {
       try {
-        await this.container.jobs.enqueue(workspaceId, INDEX_JOB_KIND, {
+        await this.deps.jobs.enqueue(workspaceId, INDEX_JOB_KIND, {
           repoId,
           owner,
           name,
@@ -95,7 +106,7 @@ export class RepoService {
     if (existing) return { repo: toRepoDto(existing), created: false };
 
     const row = await this.repo.insert({ workspaceId, owner, name, fullName, createdBy: userId });
-    await this.container.jobs.enqueue(workspaceId, CLONE_JOB_KIND, {
+    await this.deps.jobs.enqueue(workspaceId, CLONE_JOB_KIND, {
       repoId: row.id,
       owner,
       name,
@@ -114,7 +125,7 @@ export class RepoService {
   async refresh(workspaceId: string, id: string): Promise<{ status: 'refreshing' }> {
     const repo = await this.repo.getById(workspaceId, id);
     if (!repo) throw new NotFoundError('Repo not found');
-    await this.container.jobs.enqueue(workspaceId, CLONE_JOB_KIND, {
+    await this.deps.jobs.enqueue(workspaceId, CLONE_JOB_KIND, {
       repoId: repo.id,
       owner: repo.owner,
       name: repo.name,
@@ -126,7 +137,7 @@ export class RepoService {
     // refresh fires before the new clone settles, it cheaply exits; if after,
     // it picks up the new HEAD.
     try {
-      await this.container.jobs.enqueue(workspaceId, REFRESH_JOB_KIND, {
+      await this.deps.jobs.enqueue(workspaceId, REFRESH_JOB_KIND, {
         repoId: repo.id,
         owner: repo.owner,
         name: repo.name,

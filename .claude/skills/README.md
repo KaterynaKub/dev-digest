@@ -6,9 +6,11 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 
 | Skill | Scope | Description |
 |-------|-------|-------------|
+| [onion-architecture](onion-architecture/SKILL.md) | Backend | Layering, dependency rule, ports & adapters, composition root, `arch:check` |
 | [fastify-best-practices](fastify-best-practices/SKILL.md) | Backend | Fastify routes, plugins, JSON-schema validation, error handling |
 | [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Backend | Drizzle schema, queries, relations, transactions, migrations |
 | [postgresql-table-design](postgresql-table-design/SKILL.md) | Backend | Postgres schema design, data types, indexing, constraints |
+| [ui-frontend-architecture](ui-frontend-architecture/SKILL.md) | Frontend | Feature boundaries, folder structure, state placement, data layer |
 | [next-best-practices](next-best-practices/SKILL.md) | Frontend | Next.js App Router, RSC boundaries, data fetching, optimization |
 | [react-best-practices](react-best-practices/SKILL.md) | Frontend | React anti-patterns, state management, hooks rules |
 | [react-testing-library](react-testing-library/SKILL.md) | Frontend | General-purpose React Testing Library guide with Vitest |
@@ -17,6 +19,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [engineering-insights](engineering-insights/SKILL.md) | Shared | Capturing non-obvious findings into the nearest `INSIGHTS.md` |
+| [pr-self-review](pr-self-review/SKILL.md) | Shared | Pre-PR gate: routes the diff to the skills above, blocks on CRITICAL |
 
 ## What Are Skills?
 

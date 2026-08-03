@@ -1,14 +1,14 @@
-import type { Container } from '../../platform/container.js';
 import type {
   Agent,
   AgentSkillLink,
   AgentVersion,
   CiFailOn,
+  LLMProvider,
   ModelInfo,
   Provider,
   ReviewStrategy,
 } from '@devdigest/shared';
-import { AgentsRepository } from './repository.js';
+import type { AgentsRepository } from './repository.js';
 import { toAgentDto, toAgentVersionDto } from './helpers.js';
 
 /**
@@ -48,11 +48,21 @@ export interface UpdateAgentInput {
   enabled?: boolean;
 }
 
+/**
+ * Ports this service needs. Injected explicitly — never the whole Container,
+ * and never `Db`: persistence stays behind the repository.
+ */
+export interface AgentsDeps {
+  repo: AgentsRepository;
+  /** Lazily resolved so a missing provider key only throws on `listModels`. */
+  llm: (provider: Provider) => Promise<LLMProvider>;
+}
+
 export class AgentsService {
   private repo: AgentsRepository;
 
-  constructor(private container: Container) {
-    this.repo = new AgentsRepository(container.db);
+  constructor(private deps: AgentsDeps) {
+    this.repo = deps.repo;
   }
 
   async list(workspaceId: string): Promise<Agent[]> {
@@ -177,7 +187,7 @@ export class AgentsService {
    */
   async listModels(provider: Provider): Promise<ModelInfo[]> {
     try {
-      const llm = await this.container.llm(provider);
+      const llm = await this.deps.llm(provider);
       return await llm.listModels();
     } catch {
       return [];

@@ -23,8 +23,9 @@ import { readFile } from 'node:fs/promises';
 import { cpus } from 'node:os';
 import { join } from 'node:path';
 import PQueue from 'p-queue';
-import type { RepoRef } from '@devdigest/shared';
-import type { Container } from '../../../platform/container.js';
+import type { GitClient, RepoRef } from '@devdigest/shared';
+import type { DepGraph } from '../../../adapters/depgraph/index.js';
+import type { Tokenizer } from '../../../adapters/tokenizer/index.js';
 import { withTimeout } from '../../../platform/resilience.js';
 import { parseSymbols, parseReferences, langForFile } from '../../../adapters/astgrep/index.js';
 import { extractEndpoints, extractCrons } from '../../../adapters/codeindex/extract.js';
@@ -53,6 +54,16 @@ export interface IndexPayload {
   name?: string;
 }
 
+/**
+ * Ports the indexer pipeline needs. Injected explicitly — never the whole
+ * Container. Shared by `runFullIndex` and `runIncremental`.
+ */
+export interface IndexPipelineDeps {
+  git: GitClient;
+  depgraph: DepGraph;
+  tokenizer: Tokenizer;
+}
+
 /** Per-file parse error captured into `stats.parseDegraded` (capped). */
 interface ParseDegradedEntry {
   file: string;
@@ -69,7 +80,7 @@ const PARSE_DEGRADED_CAP = 50;
  * idempotent on retry.
  */
 export async function runFullIndex(
-  container: Container,
+  deps: IndexPipelineDeps,
   repository: RepoIntelRepository,
   payload: IndexPayload,
 ): Promise<IndexResult> {
@@ -94,7 +105,7 @@ export async function runFullIndex(
   }
 
   const ref: RepoRef = { owner: repo.owner, name: repo.name };
-  const currentSha = await safeCurrentHead(container, ref);
+  const currentSha = await safeCurrentHead(deps, ref);
 
   // Walk + filter -------------------------------------------------------
   const walk = await walkClone(repo.clonePath);
@@ -213,7 +224,7 @@ export async function runFullIndex(
   let rankCount = 0;
   if (!softBudgetReached) {
     try {
-      const edges = await container.depgraph.buildEdges(repo.clonePath, walk.files);
+      const edges = await deps.depgraph.buildEdges(repo.clonePath, walk.files);
       edgeRows = edges.map((e) => ({ fromFile: e.from, toFile: e.to }));
     } catch (err) {
       graphFailed = asMessage(err);
@@ -231,7 +242,7 @@ export async function runFullIndex(
 
     // Repo-map render → cache. Drop stale entries (prior SHAs) first.
     const candidates = await repository.getRepoMapCandidates(repoId);
-    const map = renderRepoMap(candidates, container.tokenizer, DEFAULT_REPO_MAP_TOKEN_BUDGET);
+    const map = renderRepoMap(candidates, deps.tokenizer, DEFAULT_REPO_MAP_TOKEN_BUDGET);
     await repository.deleteRepoMapCache(repoId);
     if (currentSha) {
       await repository.putRepoMapCache(
@@ -298,9 +309,9 @@ function sha1(s: string): string {
   return createHash('sha1').update(s).digest('hex');
 }
 
-async function safeCurrentHead(container: Container, ref: RepoRef): Promise<string> {
+async function safeCurrentHead(deps: IndexPipelineDeps, ref: RepoRef): Promise<string> {
   try {
-    return await container.git.currentHead(ref);
+    return await deps.git.currentHead(ref);
   } catch {
     return '';
   }

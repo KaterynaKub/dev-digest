@@ -14,8 +14,13 @@ Search `docs/`, `specs/`, `INSIGHTS.md` first.
   `repository.ts` (no HTTP) → `helpers.ts` (pure) → `constants.ts`.
 - Zod contracts from `@devdigest/shared` drive validation AND serialization —
   never hand-roll `Schema.parse(req.body)` in a handler.
-- Adapters are resolved through `src/platform/container.ts`, never imported
-  directly by a service — that is what makes mock injection work.
+- Adapters and repositories are resolved in `src/platform/container.ts`, then
+  handed to a service as an explicit `<Name>Deps` object built in `routes.ts`.
+  A service never imports the `Container`, an adapter, or `db/**` — that is what
+  makes mock injection work and is enforced by `pnpm arch:check`.
+- Async, secret-dependent ports are injected as resolver functions
+  (`llm: (provider) => container.llm(provider)`), so a missing key fails the one
+  request that needs it rather than app startup.
 - Every domain table carries `workspace_id`; resolve it via `getContext()`.
 
 ## Use when
