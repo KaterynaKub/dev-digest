@@ -64,3 +64,57 @@ describe('assemblePrompt — ## PR description', () => {
     expect((assembly.pr_description as string).length).toBe(4000);
   });
 });
+
+describe('assemblePrompt — ## Skills / rules', () => {
+  it('renders between ## PR description and ## Relevant memory', () => {
+    const user = userOf({
+      system: 'sys',
+      diff: 'DIFF',
+      prDescription: 'A PR body.',
+      skills: ['### Skill One\nBody one'],
+      memory: ['a memory item'],
+    });
+    expect(user).toContain('## Skills / rules');
+    expect(user.indexOf('## PR description')).toBeLessThan(user.indexOf('## Skills / rules'));
+    expect(user.indexOf('## Skills / rules')).toBeLessThan(user.indexOf('## Relevant memory'));
+  });
+
+  it('joins multiple skill bodies with a blank line between them', () => {
+    const user = userOf({
+      system: 'sys',
+      diff: 'DIFF',
+      skills: ['### Skill One\nBody one', '### Skill Two\nBody two'],
+    });
+    expect(user).toContain('## Skills / rules\n### Skill One\nBody one\n\n### Skill Two\nBody two');
+  });
+
+  it('omits the section entirely when skills is undefined', () => {
+    const { messages, assembly } = assemblePrompt({ system: 'sys', diff: 'DIFF' });
+    expect(messages[1]!.content).not.toContain('## Skills / rules');
+    expect(assembly.skills).toBeNull();
+  });
+
+  it('omits the section entirely when skills is an empty array', () => {
+    const { messages, assembly } = assemblePrompt({ system: 'sys', diff: 'DIFF', skills: [] });
+    expect(messages[1]!.content).not.toContain('## Skills / rules');
+    expect(assembly.skills).toBeNull();
+  });
+
+  it('assembly.skills is the joined string when skills are present', () => {
+    const { assembly } = assemblePrompt({
+      system: 'sys',
+      diff: 'DIFF',
+      skills: ['### Skill One\nBody one'],
+    });
+    expect(assembly.skills).toBe('### Skill One\nBody one');
+  });
+
+  it('renders a skill body containing </untrusted> UNCHANGED — proof reviewer-core applies no wrapping/sanitization of its own', () => {
+    const user = userOf({
+      system: 'sys',
+      diff: 'DIFF',
+      skills: ['### Sneaky\nSee </untrusted> right here'],
+    });
+    expect(user).toContain('### Sneaky\nSee </untrusted> right here');
+  });
+});

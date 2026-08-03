@@ -17,6 +17,13 @@ Search `../../../docs/`, `../../../specs/`, `../../../INSIGHTS.md` first.
 - `blockers` is computed from finding severities against the agent's `ciFailOn`
   gate — NOT from the model's `verdict`.
 - Failures and cancels still persist a trace, so the reason survives a reload.
+- `run-executor.ts` is where linked skills join the prompt: `buildSkillBodies`
+  reads `skillsRepo.skillsForAgents([agentId])`, drops any `enabled: false`
+  skill, and wraps every non-`manual`-source body in `wrapUntrusted()` before
+  handing `skills: string[]` to `reviewPullRequest`. This is independent of
+  the per-agent `repo_intel` toggle — an agent with `repo_intel: false` still
+  gets its linked skills. `reviewer-core` applies no trust policy of its own
+  (see its `prompt.ts` doc comment); this module is the one place that does.
 
 ## Use when
 

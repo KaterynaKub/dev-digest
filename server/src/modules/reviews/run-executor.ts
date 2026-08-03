@@ -11,9 +11,14 @@ import type { RepoIntel } from '../repo-intel/types.js';
 // AgentRow comes from the repository that owns it, not from db/rows directly —
 // the service layer stays clear of the persistence module.
 import type { AgentsRepository, AgentRow } from '../agents/repository.js';
-import { reviewPullRequest, countBlockers } from '@devdigest/reviewer-core';
+import { reviewPullRequest, countBlockers, wrapUntrusted } from '@devdigest/reviewer-core';
 import { RunLogger } from '../../platform/run-logger.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow, RepoRow } from './repository.js';
+// Import of another module's REPOSITORY (not its service/routes) is allowed —
+// AgentsRepository above is already imported the same way. skillsForAgents is
+// the READ side of agent_skills; skills owns it (see modules/skills/CLAUDE.md).
+import type { SkillsRepository } from '../skills/repository.js';
+import { slugify } from '../skills/helpers.js';
 import { REVIEW_STRATEGY } from './constants.js';
 import { taskLine } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
@@ -50,6 +55,8 @@ export interface ReviewRunDeps {
   repoIntel: RepoIntel;
   /** Lazily resolved per agent: an unconfigured provider must fail that run only. */
   llm: (provider: Provider) => Promise<LLMProvider>;
+  /** Read-only: linked skill bodies in `agent_skills.order`, for buildSkillBodies. */
+  skillsRepo: SkillsRepository;
 }
 
 /**
@@ -203,6 +210,11 @@ export class ReviewRunExecutor {
       const repoMap = repoIntelOn ? await this.buildRepoMapDigest(pull.repoId, runLog) : undefined;
       const rankNote = repoIntelOn ? await this.buildRankNote(pull.repoId, diff, runLog) : '';
 
+      // Skills — linked review-instruction blocks, in agent_skills.order. NOT
+      // gated by repoIntelOn: skills and repo-intel enrichment are orthogonal
+      // (an agent can have repo_intel:false and still get its linked skills).
+      const skills = await this.buildSkillBodies(agent.id, runLog);
+
       const task = taskLine(pull) + rankNote;
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
@@ -222,6 +234,9 @@ export class ReviewRunExecutor {
         ...(callersDigest ? { callers: callersDigest } : {}),
         // T3 — repo skeleton, same omit-when-empty contract.
         ...(repoMap ? { repoMap } : {}),
+        // Linked skill bodies (enabled only), in link order. Independent of
+        // repoIntel — a repo_intel:false agent still gets its skills.
+        ...(skills ? { skills } : {}),
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
@@ -430,6 +445,49 @@ export class ReviewRunExecutor {
     } catch {
       return '';
     }
+  }
+
+  /**
+   * Linked skill bodies for one agent, in `agent_skills.order` (the repository
+   * already sorts — no re-sorting here). Best-effort: a `skillsForAgents`
+   * failure degrades to `undefined` (section omitted), never a failed run.
+   *
+   * A disabled skill is silently dropped — the checklist requirement that an
+   * enabled skill shows up as its own block while a disabled one never does.
+   * `manual`-sourced bodies are trusted verbatim; every other `source` is
+   * wrapped in `wrapUntrusted` (this is the ONE place that applies that
+   * policy — `reviewer-core` stays a plain renderer, see its prompt.ts doc
+   * comment). Returns `undefined` when nothing survives the enabled filter,
+   * so `assemblePrompt` omits the `## Skills / rules` section entirely
+   * instead of rendering an empty heading.
+   */
+  private async buildSkillBodies(
+    agentId: string,
+    runLog: RunLogger,
+  ): Promise<string[] | undefined> {
+    let byAgent;
+    try {
+      byAgent = await this.deps.skillsRepo.skillsForAgents([agentId]);
+    } catch (err) {
+      runLog.info(`skills: lookup failed — ${(err as Error).message}`);
+      return undefined;
+    }
+    const linked = byAgent.get(agentId) ?? [];
+    const enabled = linked.filter((s) => s.enabled === true);
+    const disabledCount = linked.length - enabled.length;
+    runLog.info(`skills: ${enabled.length} enabled, ${disabledCount} disabled (skipped)`);
+    if (enabled.length === 0) return undefined;
+
+    let untrustedCount = 0;
+    const bodies = enabled.map((skill) => {
+      if (skill.source === 'manual') {
+        return `### ${skill.name}\n${skill.body}`;
+      }
+      untrustedCount++;
+      return `### ${skill.name}\n${wrapUntrusted(`skill-${slugify(skill.name)}`, skill.body)}`;
+    });
+    runLog.info(`skills: ${bodies.length} skill(s) attached (${untrustedCount} untrusted-wrapped)`);
+    return bodies;
   }
 
   /**

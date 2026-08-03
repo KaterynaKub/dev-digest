@@ -122,3 +122,72 @@ Whenever a fixed-size label shares a flex row with elastic text, mark the label
 `flexShrink: 0` + `whiteSpace: nowrap` and give the elastic cell `minWidth: 0` —
 without the latter a flex child refuses to shrink below its content width and
 the ellipsis never appears.
+
+## Trap: no top-level `*ListView` component has ever been rendered in a test
+
+**Found:** 2026-08-03 · **Applies to:** src/app/**/_components/*ListView
+
+Every existing `*ListView` (`AgentsListView`, and now `SkillsListView`) wraps its
+content in `<AppShell>`, which pulls in `useGlobalShortcuts`/`useShellCommands`/
+`useShellContext` — all of which call `useRouter()`/`usePathname()` from
+`next/navigation`. Rendering the real `AppShell` under vitest+jsdom throws
+"invariant expected app router to be mounted" the moment any descendant also
+calls `useRouter()` (e.g. a preview panel with an Edit button). No test in this
+repo has ever exercised the real `AppShell`; `AgentsListView` itself has no test
+file at all. The working pattern (see `SkillsListView.test.tsx`) is to
+`vi.mock("@/components/app-shell", () => ({ AppShell: ({ children }) => <div>{children}</div> }))`
+and separately `vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }))`
+for any descendant that navigates — mocking only one of the two still throws.
+
+## Decision: `SkillDraft`'s edited-in-preview fields reuse the editor's own labels, not new copy
+
+**Found:** 2026-08-03 · **Applies to:** src/app/skills
+
+`AddSkillDrawer` renders the same name/description/type/body fields as
+`SkillDetail`'s Config tab and deliberately pulls their labels from `skills.editor.*`
+(`editor.name`, `editor.descriptionHint`, etc.) rather than adding parallel
+`file.*` label keys. `skills.json`'s pre-existing `file.*` block only supplies
+placeholders/hints for the *paste-a-file* flow's own copy (`file.namePlaceholder`,
+`file.bodyPlaceholder`) — treat `editor.*` as the single source of field labels
+for anywhere a Skill's fields are edited, and `file.*`/`preview.*` as flavor text
+layered on top per-surface.
+
+## Trap: `getByDisplayValue` silently never matches a multi-line textarea value
+
+**Found:** 2026-08-03 · **Applies to:** src/app/skills
+
+Every skill body is multi-line, and `screen.getByDisplayValue("# Body\nSome rule
+text.")` fails with "Unable to find an element with the display value" even
+though the textarea holds exactly that string. RTL normalises whitespace in the
+matcher (collapsing `\n` to a space) but compares against the raw `value`, so an
+exact multi-line string can never match. The failure reads like the component
+did not render the value at all, which sends you debugging the wrong thing.
+Match such fields with a regex anchored on the first line —
+`getByDisplayValue(/^# Body/)` — rather than the full string.
+
+## Trap: clicking a card's text does not trigger the card's own `onClick` here
+
+**Found:** 2026-08-03 · **Applies to:** src/app/skills/_components/SkillsListView
+
+`SkillCard` puts `onClick` on the outer card div, and the name lives in a nested
+`<span>` several levels down. `fireEvent.click(screen.getByText(name))` dispatches
+on the span; the handler is only reached via React's synthetic-event delegation,
+which is unreliable across the nested-`div` structure here — the test fails as if
+the selection never happened. Worse, once a skill IS selected its name appears
+twice (list card + detail header), so `getByText` starts throwing "multiple
+elements" instead. Select by walking up to the clickable element and take the
+first match:
+`screen.getAllByText(name)[0].closest("div[style*='cursor: pointer']")`.
+
+## Decision: tab state in `SkillDetail` is local, unlike `AgentEditor`'s `?tab=`
+
+**Found:** 2026-08-03 · **Applies to:** src/app/skills/_components/SkillsListView/_components/SkillDetail
+
+`AgentEditor` keeps its tab in the URL (`?tab=`) and `SkillDetail` deliberately
+does not, which looks inconsistent until you note where each one sits.
+`AgentEditor` IS the page at `/agents/[id]`, so a URL-encoded tab is
+shareable and Back behaves as expected. `SkillDetail` is a pane inside the
+`/skills` list page: putting its tab in the URL would make the browser Back
+button undo a tab switch rather than leave the page, and it would push a history
+entry per tab click. Copy the `?tab=` idiom only for a tab bar that owns its
+whole route.

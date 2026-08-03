@@ -3,6 +3,7 @@ import type { RunBus } from '../../platform/sse.js';
 // AgentRow comes from the repository that owns it, not from db/rows directly —
 // the service layer stays clear of the persistence module.
 import type { AgentsRepository, AgentRow } from '../agents/repository.js';
+import type { SkillsRepository } from '../skills/repository.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import type { ReviewRepository } from './repository.js';
 import { type ReviewDto, type ReviewDtoFinding } from './helpers.js';
@@ -45,6 +46,7 @@ export interface ReviewDeps extends ReviewRunDeps {
 export function reviewDeps(container: {
   reviewRepo: ReviewRepository;
   agentsRepo: AgentsRepository;
+  skillsRepo: SkillsRepository;
   git: ReviewRunDeps['git'];
   runBus: RunBus;
   repoIntel: ReviewRunDeps['repoIntel'];
@@ -53,6 +55,7 @@ export function reviewDeps(container: {
   return {
     repo: container.reviewRepo,
     agentsRepo: container.agentsRepo,
+    skillsRepo: container.skillsRepo,
     git: container.git,
     runBus: container.runBus,
     repoIntel: container.repoIntel,

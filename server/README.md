@@ -74,6 +74,9 @@ flowchart TB
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id"]
   end
+  subgraph Skills["Skills"]
+    skills["skills<br/>/skills · /skills/:id · /skills/:id/versions(/:version)<br/>/skills/import/preview · /agents/skill-counts"]
+  end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
   end
@@ -131,6 +134,13 @@ What the reviewer actually sends to the model is assembled in
 - **Grounding is mandatory.** Every finding must cite a line that exists in the
   diff or it is dropped (`groundFindings`), and the score is recomputed from the
   surviving findings — the model's self-reported score is ignored.
+- **Linked skills join the prompt as `## Skills / rules`.** `run-executor.ts`
+  reads the agent's linked skills (`skillsRepo.skillsForAgents`, in
+  `agent_skills.order`), drops any disabled one, and renders each as its own
+  `### Name` block — `manual`-source bodies verbatim, every other `source`
+  wrapped in `wrapUntrusted()`. No skills (or all disabled) → the whole
+  section is omitted, not an empty heading. This is independent of the
+  `repo_intel` toggle above.
 
 ## Testing
 

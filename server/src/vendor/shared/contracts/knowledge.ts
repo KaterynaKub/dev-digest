@@ -140,6 +140,31 @@ export const CommunitySkill = z.object({
 });
 export type CommunitySkill = z.infer<typeof CommunitySkill>;
 
+// A skill parsed from an uploaded file/archive but NOT YET persisted — the
+// response shape of `POST /skills/import/preview`. No `id`/`enabled`/`version`:
+// those only exist once the (editable) draft is confirmed via `POST /skills`.
+export const SkillDraft = z.object({
+  name: z.string(),
+  description: z.string(),
+  type: SkillType,
+  body: z.string(),
+  // Archive-relative path of the entry the draft was extracted from, e.g.
+  // "skills/test-quality/SKILL.md" — null/absent for a single uploaded file.
+  source_entry: z.string().nullish(),
+});
+export type SkillDraft = z.infer<typeof SkillDraft>;
+
+// An immutable snapshot of a skill's `body` at a given version, recorded in
+// `skill_versions` whenever the body changes (see modules/skills/CLAUDE.md for
+// the narrower-than-agents versioning rule: only `body` bumps the version).
+export const SkillVersion = z.object({
+  skill_id: z.string(),
+  version: z.number().int(),
+  body: z.string(),
+  created_at: z.string(),
+});
+export type SkillVersion = z.infer<typeof SkillVersion>;
+
 // ---- Conventions ----
 export const ConventionCandidate = z.object({
   id: z.string(),

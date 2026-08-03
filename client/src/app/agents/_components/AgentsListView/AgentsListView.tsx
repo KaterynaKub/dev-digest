@@ -8,6 +8,7 @@ import { useTranslations } from "next-intl";
 import { Button, Dropdown, EmptyState, ErrorState, Skeleton, Icon } from "@devdigest/ui";
 import { AppShell } from "@/components/app-shell";
 import { useAgents, useUpdateAgent } from "@/lib/hooks/agents";
+import { useAgentSkillCounts } from "@/lib/hooks/skills";
 import { AgentCard } from "../AgentCard";
 import { CreateAgentModal } from "./_components/CreateAgentModal";
 import { TEMPLATES } from "./constants";
@@ -18,11 +19,13 @@ export function AgentsListView() {
   const t = useTranslations("agents");
   const router = useRouter();
   const { data: agents, isLoading, isError, refetch } = useAgents();
+  const { data: skillCounts } = useAgentSkillCounts();
   const update = useUpdateAgent();
   const [creating, setCreating] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
   const list = filterAgents(agents ?? [], search);
+  const skillCountByAgent = new Map((skillCounts ?? []).map((c) => [c.agent_id, c.count]));
 
   return (
     <AppShell crumb={[{ label: t("list.breadcrumbLab") }, { label: t("list.breadcrumb") }]}>
@@ -86,6 +89,7 @@ export function AgentsListView() {
               <AgentCard
                 key={a.id}
                 ag={a}
+                skillCount={skillCountByAgent.get(a.id)}
                 onClick={() => router.push(`/agents/${a.id}?tab=config`)}
                 onToggle={(enabled) => update.mutate({ id: a.id, patch: { enabled } })}
               />

@@ -97,3 +97,32 @@ The tests that broke were also the ones reaching furthest around the DI:
 `(svc as unknown as { repo: X }).repo = stub` to patch a private field after
 building the service from an `as never` container. With ports injected, that
 patching is gone — the stub is passed in as `repo`.
+
+## Trap: `pnpm <any script>` hard-fails after adding a dependency with a native build script, until `approve-builds` runs
+
+**Found:** 2026-08-03 · **Applies to:** package.json, pnpm-workspace.yaml
+
+Adding a new dependency (e.g. `yauzl`, transitively pulling `ssh2`) makes
+`pnpm typecheck` / `pnpm test` / `pnpm arch:check` / `pnpm db:generate` all
+fail immediately with `[ERR_PNPM_IGNORED_BUILDS]`, before running any of the
+actual command — pnpm now refuses to proceed until every package with an
+install/postinstall script is explicitly allow- or deny-listed. The fix is
+`pnpm approve-builds --all` (writes the allowlist into `pnpm-workspace.yaml`'s
+`allowBuilds:` block), not reinstalling or downgrading anything. `ssh2`'s
+native crypto binding fails to compile on a machine without the MSVC toolchain
+(`node-gyp` can't find Visual Studio) — that failure is non-fatal (falls back
+to the pure-JS binding) and does not block the approval step. Do not mistake
+either failure for a real dependency problem.
+
+## Decision: skills' `skill_versions` snapshots ONLY `body`, deliberately narrower than agents' "any config field" rule
+
+**Found:** 2026-08-03 · **Applies to:** src/modules/skills/repository.ts, src/modules/skills/helpers.ts
+
+`AgentsRepository.update` bumps `agent_versions` on any config field change
+(`isConfigChange`); `SkillsRepository.update` bumps `skill_versions` ONLY on a
+`body` change (`isBodyChange`). This is not an oversight to reconcile — a
+skill's entire prompt-visible payload is `body`, so renaming/retyping/enabling
+a skill doesn't change what any past review's prompt actually contained. If a
+future refactor tries to unify the two version-bump rules "for consistency,"
+that would start bumping skill versions on cosmetic edits and break the
+version history's meaning as "what did the prompt actually see."

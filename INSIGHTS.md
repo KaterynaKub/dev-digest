@@ -80,3 +80,27 @@ trimming a noisy tool's output while deciding whether the tool passed.
 Redirect to a file, capture the status, then read the file:
 `pnpm typecheck > /tmp/tc.log 2>&1; echo "exit=$?"`. Alternatively set
 `set -o pipefail`, which is not on by default in the `sh` used by git hooks.
+
+---
+
+## Trap: a multi-wave feature built by parallel subagents leaves "later wave" comments stale the moment the later wave lands
+
+**Found:** 2026-08-03 · **Applies to:** any multi-package feature split across sequential/parallel agent runs
+
+Wave 1 of the Skills feature (`server/src/modules/skills/`) shipped doc
+comments like "wrapping is NOT this module's job — it belongs to
+`run-executor.ts` (a later wave)" — accurate when written, since the
+run-executor wiring genuinely hadn't landed yet. Wave 2 then implemented
+exactly that wiring in the same overall task, but nothing re-visited Wave 1's
+comments to drop the now-false "later wave" qualifier. Nobody caught it until
+a `pr-self-review` pass read `modules/skills/CLAUDE.md` and
+`repository.ts` side-by-side with the (now-existing) `run-executor.ts` code.
+
+The failure mode is generic, not specific to this feature: any comment or
+`CLAUDE.md` bullet that describes a dependency as "not yet built" is a ticking
+staleness bug the moment a later wave/agent/session builds it, and nothing
+forces a re-read of earlier waves' prose once the code changes underneath it.
+When closing out the last wave of a multi-wave plan, grep the whole diff (not
+just the new wave's files) for phrases like "later wave", "not yet", "will
+eventually", "TODO once" — anything time-relative — and update or remove them
+before treating the feature as done.

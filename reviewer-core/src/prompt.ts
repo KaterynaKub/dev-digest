@@ -39,7 +39,14 @@ const MAX_PR_DESCRIPTION_CHARS = 4000;
 export interface PromptParts {
   /** Agent's system prompt (trusted). */
   system: string;
-  /** Linked skill bodies (trusted-ish; community skills should be sanitized upstream). */
+  /**
+   * Linked skill bodies, pre-rendered by the caller — already in the exact
+   * form to concatenate (e.g. `### Name\n<body-or-wrapped-body>`). This
+   * package renders them verbatim and applies NO trust policy of its own:
+   * the caller (`server/src/modules/reviews/run-executor.ts`) is responsible
+   * for calling `wrapUntrusted()` on any body whose `source !== 'manual'`
+   * before it ever reaches here. `reviewer-core` stays a pure renderer.
+   */
   skills?: string[];
   /** Relevant memory items (trusted, curated). */
   memory?: string[];

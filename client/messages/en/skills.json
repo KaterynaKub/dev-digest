@@ -7,6 +7,7 @@
     "searchPlaceholder": "Search skills…",
     "loadError": "Could not load skills.",
     "menu": {
+      "createFromScratch": "Create from scratch",
       "fromFile": "Import from file",
       "fromUrl": "Import from URL",
       "community": "Search community skills…"
@@ -15,6 +16,10 @@
       "title": "No skills yet",
       "body": "Import a skill from a file, a URL, or the community catalog.",
       "cta": "Import from file"
+    },
+    "noMatch": {
+      "title": "No matching skills",
+      "body": "Try a different search term."
     },
     "selectPrompt": {
       "title": "Select a skill",
@@ -25,9 +30,80 @@
     "crumbSkill": "Skill",
     "back": "← All skills",
     "loadError": "Could not load this skill.",
+    "runOnEvals": "Run on evals",
     "notFound": {
       "title": "Skill not found",
       "body": "It may have been deleted."
+    },
+    "tabs": {
+      "config": "Config",
+      "preview": "Preview",
+      "evals": "Evals",
+      "stats": "Stats",
+      "versions": "Versions"
+    }
+  },
+  "editor": {
+    "title": "Configuration",
+    "name": "Name",
+    "description": "Description",
+    "descriptionHint": "This description is the skill's interface — the agent reads it to decide whether the skill applies. Write it as a direct instruction (e.g. \"Use when reviewing test files\"), not as freeform notes to yourself.",
+    "type": "Type",
+    "body": "Skill body",
+    "bodyFile": "{name}.md",
+    "unsaved": "unsaved",
+    "tokens": "{count} tokens",
+    "enabled": "Enabled",
+    "save": "Save skill",
+    "saving": "Saving…",
+    "saved": "Saved (v{version})",
+    "savedToast": "Skill saved (v{version})",
+    "cancel": "Cancel",
+    "create": "Create skill",
+    "creating": "Creating…"
+  },
+  "preview": {
+    "title": "Preview",
+    "subtitle": "Rendered as the reviewing agent receives it.",
+    "untrustedBadge": "untrusted source",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "save": "Save",
+    "edit": "Edit",
+    "untrustedNotice": "This skill came from an untrusted source. Its body is stored as data (delimiter-wrapped) and must be vetted before it is enabled for an agent.",
+    "bodyLabel": "Skill body (Markdown)",
+    "bodyHint": "Saving a changed body creates a new immutable version.",
+    "empty": "This skill has no body yet.",
+    "version": "v{version}"
+  },
+  "evals": {
+    "title": "Eval cases",
+    "comingSoon": {
+      "title": "Evals are coming soon",
+      "body": "Eval cases let you pin a diff to an expected finding and re-score the skill on every edit. The scoring engine is not built yet — nothing here is measured today."
+    }
+  },
+  "stats": {
+    "title": "Stats",
+    "comingSoon": {
+      "title": "Stats are coming soon",
+      "body": "Usage, pull frequency, and accept rate need review telemetry that is not collected yet. Once reviews record which skills reached the prompt, this tab will report it."
+    }
+  },
+  "versions": {
+    "title": "Version history",
+    "count": "{count, plural, one {# version} other {# versions}}",
+    "subtitle": "Every save snapshots the body so eval runs stay reproducible against the exact text they scored.",
+    "current": "Current",
+    "diff": "Diff",
+    "restore": "Restore",
+    "restoring": "Restoring…",
+    "restored": "Restored v{version} as v{newVersion}",
+    "diffSoon": "Version diffs are coming soon.",
+    "loadError": "Could not load version history.",
+    "empty": {
+      "title": "No saved versions yet",
+      "body": "Editing and saving the skill body snapshots a version here."
     }
   },
   "drawer": {
@@ -60,10 +136,16 @@
     "success": "Imported \"{name}\". Disabled until you vet + enable it."
   },
   "community": {
+    "title": "Search community skills",
+    "subtitle": "Import vetted skills from public repos",
     "searchPlaceholder": "Search community skills (e.g. security)…",
     "allLanguages": "All languages",
     "loadError": "Could not load community skills",
     "retry": "Retry",
+    "comingSoon": {
+      "title": "Community search is coming soon",
+      "body": "Browsing and importing vetted skills from public repos needs a catalog service that is not wired up yet. Import from a file in the meantime."
+    },
     "noMatch": {
       "title": "No matching skills",
       "body": "Try a different search term."
@@ -74,6 +156,9 @@
   "listItem": {
     "needsVetting": "needs vetting",
     "vettingTitle": "Untrusted source — vet before enabling",
+    "agents": "{count, plural, one {# agent} other {# agents}}",
+    "pull": "{value}% pull",
+    "accept": "{value}% accept",
     "type": {
       "rubric": "rubric",
       "convention": "convention",
@@ -87,15 +172,5 @@
       "imported_url": "Imported"
     }
   },
-  "preview": {
-    "untrustedBadge": "untrusted source",
-    "enabled": "Enabled",
-    "disabled": "Disabled",
-    "save": "Save",
-    "edit": "Edit",
-    "untrustedNotice": "This skill came from an untrusted source. Its body is stored as data (delimiter-wrapped) and must be vetted before it is enabled for an agent.",
-    "bodyLabel": "Skill body (Markdown)",
-    "bodyHint": "Saving a changed body creates a new immutable version.",
-    "version": "v{version}"
-  }
+  "comingSoon": "Coming soon"
 }

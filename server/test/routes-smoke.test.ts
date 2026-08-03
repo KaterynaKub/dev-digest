@@ -64,4 +64,25 @@ describe('routes (no DB)', () => {
     expect(res.json().error.code).toBe('validation_error');
     await app.close();
   });
+
+  it('GET /skills is registered (the skills module plugin loads)', async () => {
+    // A missing/unregistered route falls through to fastify's built-in 404
+    // (no `error` envelope), never our structured error handler — so "not 404"
+    // here specifically proves the route exists, regardless of DB reachability.
+    const app = await buildApp({ config });
+    const res = await app.inject({ method: 'GET', url: '/skills' });
+    expect(res.statusCode).not.toBe(404);
+    await app.close();
+  });
+
+  it('GET /agents/skill-counts resolves as a static route — never 422s on the uuid param schema of /agents/:id', async () => {
+    const app = await buildApp({ config });
+    const res = await app.inject({ method: 'GET', url: '/agents/skill-counts' });
+    // Must NOT be 422: a 422 here would mean the request fell through to
+    // /agents/:id's uuid-validated param schema, treating "skill-counts" as an
+    // :id. Must also not be 404 (route missing).
+    expect(res.statusCode).not.toBe(422);
+    expect(res.statusCode).not.toBe(404);
+    await app.close();
+  });
 });

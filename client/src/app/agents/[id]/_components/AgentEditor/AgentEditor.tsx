@@ -8,6 +8,7 @@ import { useTranslations } from "next-intl";
 import { Tabs } from "@devdigest/ui";
 import type { Agent } from "@devdigest/shared";
 import { ConfigTab } from "./_components/ConfigTab";
+import { SkillsTab } from "./_components/SkillsTab";
 import { TABS } from "./constants";
 import { s } from "./styles";
 
@@ -20,9 +21,10 @@ export function AgentEditor({ agent, tab, onTab }: { agent: Agent; tab: string; 
         <Tabs tabs={tabs} value={tab} onChange={onTab} pad="0 24px" />
       </div>
       <div style={s.body}>
-        {/* key = remount on agent switch, so the form state re-initialises from
-            the new agent instead of being reset by an effect after first paint. */}
-        <ConfigTab key={agent.id} agent={agent} />
+        {/* key = remount on agent switch, so each tab's form state
+            re-initialises from the new agent instead of being reset by an
+            effect after first paint. */}
+        {tab === "skills" ? <SkillsTab key={agent.id} agent={agent} /> : <ConfigTab key={agent.id} agent={agent} />}
       </div>
     </div>
   );
