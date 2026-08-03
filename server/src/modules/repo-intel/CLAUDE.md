@@ -21,6 +21,9 @@ Search `../../../docs/`, `../../../specs/`, `../../../INSIGHTS.md` first.
   back to diff-only.
 - Gated by BOTH `REPO_INTEL_ENABLED` and the per-agent `repo_intel` flag.
 - Most facade methods have no caller in the starter — intentional, not dead code.
+- `getConventionSamples` IS consumed (by `../conventions`). Its junk filter
+  excludes eslint/prettier/`.config.` and `walkClone` never indexes `.json`, so
+  config files are the CALLER's problem — that module probes them by exact path.
 
 ## Use when
 

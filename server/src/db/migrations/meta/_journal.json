@@ -85,6 +85,20 @@
       "when": 1785614141068,
       "tag": "0011_polite_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785793142797,
+      "tag": "0012_drop_legacy_conventions",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785793164144,
+      "tag": "0013_conventions_extractor",
+      "breakpoints": true
     }
   ]
 }

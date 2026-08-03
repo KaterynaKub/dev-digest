@@ -166,15 +166,89 @@ export const SkillVersion = z.object({
 export type SkillVersion = z.infer<typeof SkillVersion>;
 
 // ---- Conventions ----
+// Three states, not a boolean: the UI must distinguish "explicitly rejected"
+// from "not looked at yet", otherwise a "Reject all" cannot survive a reload.
+export const ConventionStatus = z.enum(['pending', 'accepted', 'rejected']);
+export type ConventionStatus = z.infer<typeof ConventionStatus>;
+
+/**
+ * Model-facing shape: what ONE structured call returns per candidate. No id and
+ * no status (assigned at persistence), and deliberately NO snippet — the
+ * verifier slices the snippet off disk itself from the cited line range, so the
+ * model has one less thing to fabricate and the snippet is ground truth.
+ */
+export const ConventionExtraction = z.object({
+  category: z.string().min(1).max(60),
+  rule: z.string().min(1).max(400),
+  evidence_path: z.string().min(1),
+  evidence_start_line: z.number().int().positive(),
+  evidence_end_line: z.number().int().positive(),
+  confidence: z.number().min(0).max(1),
+});
+export type ConventionExtraction = z.infer<typeof ConventionExtraction>;
+
+/** Batch wrapper — providers' structured mode needs an object root. */
+export const ConventionExtractionResult = z.object({
+  candidates: z.array(ConventionExtraction),
+});
+export type ConventionExtractionResult = z.infer<typeof ConventionExtractionResult>;
+
+/** A persisted, code-verified candidate — the HTTP DTO. */
 export const ConventionCandidate = z.object({
   id: z.string(),
+  scan_id: z.string(),
+  category: z.string(),
   rule: z.string(),
   evidence_path: z.string(),
+  evidence_start_line: z.number().int(),
+  evidence_end_line: z.number().int(),
   evidence_snippet: z.string(),
   confidence: z.number().min(0).max(1),
-  accepted: z.boolean(),
+  status: ConventionStatus,
+  edited: z.boolean(),
 });
 export type ConventionCandidate = z.infer<typeof ConventionCandidate>;
+
+/**
+ * One extraction run. Backs the "Detected from N sample files · last scan 1h
+ * ago" subtitle AND is the audit trail for the verification gate:
+ * `candidates_raw - candidates_kept` is how many the model hallucinated.
+ */
+export const ConventionScan = z.object({
+  id: z.string(),
+  repo_id: z.string(),
+  sample_count: z.number().int(),
+  config_count: z.number().int(),
+  candidates_raw: z.number().int(),
+  candidates_kept: z.number().int(),
+  model: z.string(),
+  created_at: z.string(),
+});
+export type ConventionScan = z.infer<typeof ConventionScan>;
+
+/** `GET /repos/:id/conventions` — the whole page in one response. */
+export const ConventionsView = z.object({
+  scan: ConventionScan.nullable(),
+  candidates: z.array(ConventionCandidate),
+});
+export type ConventionsView = z.infer<typeof ConventionsView>;
+
+/**
+ * `GET /repos/:id/conventions/skill-draft` — the server-built merged markdown
+ * for the accepted candidates. Nothing is persisted: the client edits this
+ * freely and confirms via a normal `POST /skills`, mirroring the
+ * `POST /skills/import/preview` → `POST /skills` two-step.
+ */
+export const ConventionSkillDraft = z.object({
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  type: SkillType,
+  body: z.string(),
+  evidence_files: z.array(z.string()),
+  merged_count: z.number().int(),
+});
+export type ConventionSkillDraft = z.infer<typeof ConventionSkillDraft>;
 
 // ---- Agents ----
 // 'openrouter' routes through the OpenAI-compatible API (OpenAIProvider with a

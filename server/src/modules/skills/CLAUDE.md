@@ -56,7 +56,13 @@ Search `../../../docs/`, `../../../specs/`, `../../../INSIGHTS.md`,
   `source`. `reviewer-core`'s `PromptParts.skills: string[]` stays a plain
   array of pre-rendered blocks.
 
+- `modules/conventions` creates skills through the normal `POST /skills` with
+  `source: 'extracted'`, so they land `enabled: false` behind the gate above.
+  Its "Create skill from conventions" modal renders the Enabled toggle
+  read-only rather than asking for an exemption — do not add one.
+
 ## Use when
 
 - How linked skills reach a review prompt → read `../reviews/CLAUDE.md`
 - Agent-side link/reorder API → read `../agents/CLAUDE.md`
+- Where extracted convention skills come from → read `../conventions/CLAUDE.md`

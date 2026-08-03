@@ -46,9 +46,13 @@ export interface MockLLMOptions {
   /** Fixture returned by completeStructured (validated against the schema). */
   structured?: unknown;
   /**
-   * Per-schemaName fixtures for multi-call flows (e.g. the conventions 2-step
-   * dialogue: 'ConventionFileSelection' then 'ConventionExtraction'). Looked up
-   * by req.schemaName; falls back to `structured` when no entry matches.
+   * Per-schemaName fixtures for multi-call flows. Looked up by req.schemaName;
+   * falls back to `structured` when no entry matches.
+   *
+   * NOTE: 'ConventionFileSelection' is RESERVED AND UNUSED — the conventions
+   * extractor selects its sample files entirely in code (config probes + the
+   * repo-intel rank), so it makes exactly ONE call, with schemaName
+   * 'ConventionExtraction'. An integration test asserts that call count.
    */
   structuredBySchema?: Record<string, unknown>;
   completionText?: string;

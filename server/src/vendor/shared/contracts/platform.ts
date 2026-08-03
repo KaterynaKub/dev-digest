@@ -75,8 +75,12 @@ export const FEATURE_MODELS: FeatureModelDef[] = [
     id: 'conventions',
     label: 'Conventions',
     description: 'Extracts coding conventions from the repo.',
-    defaultProvider: 'openai',
-    defaultModel: 'gpt-5.4',
+    // Deliberately a CHEAP model: extraction reads ~12 truncated files and the
+    // result is gated by a mechanical evidence check, so a frontier model buys
+    // little. Overridable per workspace here, and per scan from the
+    // Conventions page.
+    defaultProvider: 'openrouter',
+    defaultModel: 'deepseek/deepseek-v4-flash',
   },
 ];
 
