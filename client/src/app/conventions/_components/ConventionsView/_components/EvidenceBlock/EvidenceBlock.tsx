@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Icon } from "@devdigest/ui";
+import { Icon, MonoLink } from "@devdigest/ui";
 import { s } from "./styles";
 
 export interface EvidenceBlockProps {
@@ -12,9 +12,11 @@ export interface EvidenceBlockProps {
   startLine: number;
   endLine: number;
   snippet: string;
+  /** github.com blob deep-link for the cited range; absent when unknown. */
+  href?: string;
 }
 
-export function EvidenceBlock({ path, startLine, endLine, snippet }: EvidenceBlockProps) {
+export function EvidenceBlock({ path, startLine, endLine, snippet, href }: EvidenceBlockProps) {
   const t = useTranslations("conventions");
   const [copied, setCopied] = React.useState(false);
 
@@ -25,14 +27,21 @@ export function EvidenceBlock({ path, startLine, endLine, snippet }: EvidenceBlo
   };
 
   const label = copied ? t("evidence.copied") : t("evidence.copy");
+  const location = `${path}:${startLine}-${endLine}`;
 
   return (
     <div style={s.box}>
       <div style={s.bar}>
         <Icon.FileText size={13} style={{ color: "var(--text-muted)" }} />
-        <span className="mono" style={s.path}>
-          {`${path}:${startLine}-${endLine}`}
-        </span>
+        {href ? (
+          <span style={s.pathLink} title={t("evidence.openOnGithub")}>
+            <MonoLink href={href}>{location}</MonoLink>
+          </span>
+        ) : (
+          <span className="mono" style={s.path}>
+            {location}
+          </span>
+        )}
         <button type="button" title={label} aria-label={label} onClick={copy} style={s.copyBtn}>
           {copied ? <Icon.Check size={12} /> : <Icon.Copy size={12} />}
         </button>

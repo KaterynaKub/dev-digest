@@ -50,6 +50,10 @@ export function CreateSkillFromConventionsModal({
   const [type, setType] = React.useState<SkillType>("convention");
   const [body, setBody] = React.useState("");
   const [savedVersion, setSavedVersion] = React.useState<number | null>(null);
+  // `create.isPending` flips back to false the moment the POST resolves, but
+  // the user is still waiting on the push to /skills/:id. Keep the button busy
+  // across that gap so the modal never looks idle mid-navigation.
+  const [navigating, setNavigating] = React.useState(false);
 
   // Seed from the draft exactly once it arrives; later edits are the user's.
   const seeded = React.useRef(false);
@@ -78,6 +82,7 @@ export function CreateSkillFromConventionsModal({
       {
         onSuccess: (skill) => {
           setSavedVersion(skill.version);
+          setNavigating(true);
           router.push(`/skills/${skill.id}`);
         },
       },
@@ -86,11 +91,14 @@ export function CreateSkillFromConventionsModal({
 
   const typeOptions = SKILL_TYPES.map((v) => ({ value: v, label: v }));
 
+  const busy = create.isPending || navigating;
+  const busyLabel = create.isPending ? t("modal.creating") : t("modal.opening");
+
   return (
     <Modal
       width={MODAL_WIDTH}
       title={t("modal.title")}
-      subtitle={draft?.slug}
+      subtitle={draft?.slug ?? (isLoading ? t("modal.loadingDraft") : undefined)}
       onClose={onClose}
       footer={
         <div style={s.footer}>
@@ -98,16 +106,17 @@ export function CreateSkillFromConventionsModal({
             <span style={s.footerNote}>{t("modal.savedAs", { version: savedVersion })}</span>
           )}
           <div style={s.footerActions}>
-            <Button kind="ghost" onClick={onClose}>
+            <Button kind="ghost" disabled={busy} onClick={onClose}>
               {t("modal.cancel")}
             </Button>
             <Button
               kind="primary"
               icon="Sparkles"
-              disabled={!draft || !valid || create.isPending}
+              loading={busy}
+              disabled={!draft || !valid}
               onClick={submit}
             >
-              {create.isPending ? t("modal.creating") : t("modal.create")}
+              {busy ? busyLabel : t("modal.create")}
             </Button>
           </div>
         </div>
@@ -117,6 +126,14 @@ export function CreateSkillFromConventionsModal({
 
       {isLoading && !draft && (
         <div style={s.body}>
+          <div style={s.loadingBar} role="status" aria-live="polite">
+            <Icon.RefreshCw
+              size={14}
+              style={{ color: "var(--accent)", animation: "ddspin 1s linear infinite" }}
+            />
+            <span>{t("modal.loadingDraft")}</span>
+          </div>
+          <span style={s.loadingHint}>{t("modal.loadingDraftHint")}</span>
           <Skeleton height={40} />
           <Skeleton height={40} />
           <Skeleton height={180} />

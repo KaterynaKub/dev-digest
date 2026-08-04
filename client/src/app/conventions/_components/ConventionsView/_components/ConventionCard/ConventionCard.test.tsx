@@ -79,6 +79,19 @@ describe("ConventionCard", () => {
     expect(screen.getByText("edited")).toBeInTheDocument();
   });
 
+  it("links the evidence path to the github blob at the cited range", () => {
+    renderCard(CANDIDATE, { repoFullName: "acme/api", repoRef: "main" });
+    expect(screen.getByText("src/api/users.ts:23-31")).toHaveAttribute(
+      "href",
+      "https://github.com/acme/api/blob/main/src/api/users.ts#L23-L31",
+    );
+  });
+
+  it("falls back to plain text when the repo is unknown", () => {
+    renderCard(CANDIDATE);
+    expect(screen.getByText("src/api/users.ts:23-31")).not.toHaveAttribute("href");
+  });
+
   it("copies the snippet to the clipboard", () => {
     const writeText = vi.fn();
     Object.assign(navigator, { clipboard: { writeText } });

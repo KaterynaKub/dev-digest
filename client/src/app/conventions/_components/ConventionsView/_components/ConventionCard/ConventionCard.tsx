@@ -6,6 +6,7 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Badge, Button, Card, ProgressBar } from "@devdigest/ui";
 import type { ConventionCandidate } from "@devdigest/shared";
+import { githubBlobUrl } from "@/lib/github-urls";
 import { EvidenceBlock } from "../EvidenceBlock";
 import { confidenceColor } from "./constants";
 import { s } from "./styles";
@@ -13,6 +14,10 @@ import { s } from "./styles";
 export interface ConventionCardProps {
   candidate: ConventionCandidate;
   pending?: boolean;
+  /** "owner/repo" — needed to deep-link the evidence path to github.com. */
+  repoFullName?: string | null;
+  /** Scans read the clone's checked-out branch, so that is what we pin to. */
+  repoRef?: string | null;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onEdit: (candidate: ConventionCandidate) => void;
@@ -22,6 +27,8 @@ export interface ConventionCardProps {
 export function ConventionCard({
   candidate,
   pending,
+  repoFullName,
+  repoRef,
   onAccept,
   onReject,
   onEdit,
@@ -32,6 +39,16 @@ export function ConventionCard({
   const rejected = candidate.status === "rejected";
   const decided = accepted || rejected;
   const percent = Math.round(candidate.confidence * 100);
+  const evidenceHref =
+    repoFullName && repoRef
+      ? githubBlobUrl(
+          repoFullName,
+          repoRef,
+          candidate.evidence_path,
+          candidate.evidence_start_line,
+          candidate.evidence_end_line,
+        )
+      : undefined;
 
   return (
     <Card style={s.card(rejected)}>
@@ -49,6 +66,7 @@ export function ConventionCard({
               startLine={candidate.evidence_start_line}
               endLine={candidate.evidence_end_line}
               snippet={candidate.evidence_snippet}
+              href={evidenceHref}
             />
           </div>
 

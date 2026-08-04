@@ -1,6 +1,9 @@
 import type { CSSProperties } from "react";
 
 export const s = {
+  /* The shell's <main> has no padding of its own, so every page supplies its
+     own gutters — same idiom as AgentsListView. */
+  page: { padding: "24px 32px 44px", maxWidth: 1100, margin: "0 auto" } satisfies CSSProperties,
   head: {
     display: "flex",
     alignItems: "flex-start",

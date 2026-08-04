@@ -21,6 +21,15 @@ export const s = {
     background: "var(--bg-elevated)",
   } satisfies CSSProperties,
   path: { fontSize: 12, color: "var(--text-secondary)" } satisfies CSSProperties,
+  /* MonoLink hard-codes its own 13px, so this wrapper only handles layout:
+     keep the link on the bar's baseline and let it shrink before the copy
+     button does. */
+  pathLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    minWidth: 0,
+    overflow: "hidden",
+  } satisfies CSSProperties,
   copyBtn: {
     marginLeft: "auto",
     display: "inline-flex",

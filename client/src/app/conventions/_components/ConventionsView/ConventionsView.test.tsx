@@ -32,13 +32,17 @@ const extractMutate = vi.fn();
 const bulkMutate = vi.fn();
 const updateMutate = vi.fn();
 let viewData: { data?: ViewDto; isLoading: boolean; isError: boolean };
+let draftData: { data?: unknown; isLoading: boolean; isError: boolean };
 
 vi.mock("@/lib/hooks/conventions", () => ({
   useConventions: () => ({ ...viewData, refetch: vi.fn() }),
   useExtractConventions: () => ({ mutate: extractMutate, isPending: false }),
   useUpdateConvention: () => ({ mutate: updateMutate, isPending: false }),
   useBulkSetConventionStatus: () => ({ mutate: bulkMutate, isPending: false }),
-  useConventionSkillDraft: () => ({ data: undefined, isLoading: false, isError: false }),
+  useConventionSkillDraft: () => draftData,
+}));
+vi.mock("@/lib/hooks/skills", () => ({
+  useCreateSkill: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const { ConventionsView } = await import("./ConventionsView");
@@ -82,6 +86,7 @@ function renderView() {
 beforeEach(() => {
   vi.clearAllMocks();
   viewData = { data: undefined, isLoading: false, isError: false };
+  draftData = { data: undefined, isLoading: false, isError: false };
 });
 afterEach(cleanup);
 
@@ -157,6 +162,23 @@ describe("ConventionsView", () => {
     };
     renderView();
     expect(screen.getByText("Create skill")).toBeInTheDocument();
+  });
+
+  it("Create skill reports progress while the draft is being built", () => {
+    viewData = {
+      data: { scan: SCAN, candidates: [candidate({ status: "accepted" })] },
+      isLoading: false,
+      isError: false,
+    };
+    draftData = { data: undefined, isLoading: true, isError: false };
+    renderView();
+
+    fireEvent.click(screen.getByText("Create skill"));
+
+    // Both the bulk-bar button and the modal say the work is in flight, so the
+    // wait on the LLM merge is never a frozen-looking UI.
+    expect(screen.getAllByText("Building draft…").length).toBeGreaterThan(0);
+    expect(screen.getByRole("status")).toHaveTextContent("Building draft…");
   });
 
   it("the model picker seeds to the registry default and is not persisted", () => {

@@ -70,7 +70,9 @@ export function ConventionsView() {
   if (!repoId) {
     return (
       <AppShell crumb={crumb}>
-        <EmptyState icon="ListChecks" title={t("page.empty.title")} body={t("page.noRepo")} />
+        <div style={s.page}>
+          <EmptyState icon="ListChecks" title={t("page.empty.title")} body={t("page.noRepo")} />
+        </div>
       </AppShell>
     );
   }
@@ -112,106 +114,113 @@ export function ConventionsView() {
         />
       )}
 
-      <div style={s.head}>
-        <div style={s.headMain}>
-          <h1 style={s.h1}>
-            {t("page.headingPrefix")}
-            <span style={s.repoName}>{repoLabel}</span>
-          </h1>
-          <p style={s.subtitle}>{subtitle}</p>
+      <div style={s.page}>
+        <div style={s.head}>
+          <div style={s.headMain}>
+            <h1 style={s.h1}>
+              {t("page.headingPrefix")}
+              <span style={s.repoName}>{repoLabel}</span>
+            </h1>
+            <p style={s.subtitle}>{subtitle}</p>
+          </div>
+          <div style={s.headActions}>
+            <ScanModelPicker
+              value={effectiveModel}
+              onChange={setModel}
+              isDefault={isDefaultModel}
+            />
+            <Button
+              kind="secondary"
+              icon="RefreshCw"
+              loading={extract.isPending}
+              disabled={extract.isPending}
+              onClick={runScan}
+            >
+              {extract.isPending ? t("page.scanning") : t("page.rescan")}
+            </Button>
+          </div>
         </div>
-        <div style={s.headActions}>
-          <ScanModelPicker
-            value={effectiveModel}
-            onChange={setModel}
-            isDefault={isDefaultModel}
+
+        {isError && <ErrorState body={t("page.loadError")} onRetry={() => void refetch()} />}
+
+        {isLoading && (
+          <div style={s.skeletons}>
+            <Skeleton height={150} />
+            <Skeleton height={150} />
+            <Skeleton height={150} />
+          </div>
+        )}
+
+        {!isLoading && !isError && candidates.length === 0 && (
+          <EmptyState
+            icon="ListChecks"
+            title={t("page.empty.title")}
+            body={t("page.empty.body")}
+            cta={t("page.empty.cta")}
+            onCta={runScan}
+            ctaLoading={extract.isPending}
           />
-          <Button
-            kind="secondary"
-            icon="RefreshCw"
-            loading={extract.isPending}
-            disabled={extract.isPending}
-            onClick={runScan}
-          >
-            {extract.isPending ? t("page.scanning") : t("page.rescan")}
-          </Button>
-        </div>
+        )}
+
+        {!isLoading && !isError && candidates.length > 0 && (
+          <>
+            <div style={s.bulkBar}>
+              {pending > 0 && (
+                <>
+                  <Button
+                    kind="secondary"
+                    size="sm"
+                    icon="Check"
+                    disabled={bulk.isPending}
+                    onClick={() => bulk.mutate({ repoId, status: "accepted" })}
+                  >
+                    {t("bulk.acceptAll", { count: pending })}
+                  </Button>
+                  <Button
+                    kind="ghost"
+                    size="sm"
+                    icon="X"
+                    disabled={bulk.isPending}
+                    onClick={() => bulk.mutate({ repoId, status: "rejected" })}
+                  >
+                    {t("bulk.rejectAll")}
+                  </Button>
+                </>
+              )}
+              {accepted > 0 && (
+                <Button
+                  kind="primary"
+                  size="sm"
+                  icon="Sparkles"
+                  loading={creatingSkill && draft.isLoading}
+                  style={{ marginLeft: "auto" }}
+                  onClick={() => setCreatingSkill(true)}
+                >
+                  {creatingSkill && draft.isLoading
+                    ? t("bulk.buildingDraft")
+                    : t("bulk.createSkill")}
+                </Button>
+              )}
+            </div>
+
+            <div style={s.list}>
+              {candidates.map((c) => (
+                <ConventionCard
+                  key={c.id}
+                  candidate={c}
+                  pending={update.isPending || bulk.isPending}
+                  repoFullName={activeRepo?.full_name}
+                  repoRef={activeRepo?.default_branch}
+                  onAccept={(id) => setStatus(id, "accepted")}
+                  onReject={(id) => setStatus(id, "rejected")}
+                  onUndo={(id) => setStatus(id, "pending")}
+                  onEdit={setEditing}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
-
-      {isError && <ErrorState body={t("page.loadError")} onRetry={() => void refetch()} />}
-
-      {isLoading && (
-        <div style={s.skeletons}>
-          <Skeleton height={150} />
-          <Skeleton height={150} />
-          <Skeleton height={150} />
-        </div>
-      )}
-
-      {!isLoading && !isError && candidates.length === 0 && (
-        <EmptyState
-          icon="ListChecks"
-          title={t("page.empty.title")}
-          body={t("page.empty.body")}
-          cta={t("page.empty.cta")}
-          onCta={runScan}
-          ctaLoading={extract.isPending}
-        />
-      )}
-
-      {!isLoading && !isError && candidates.length > 0 && (
-        <>
-          <div style={s.bulkBar}>
-            {pending > 0 && (
-              <>
-                <Button
-                  kind="secondary"
-                  size="sm"
-                  icon="Check"
-                  disabled={bulk.isPending}
-                  onClick={() => bulk.mutate({ repoId, status: "accepted" })}
-                >
-                  {t("bulk.acceptAll", { count: pending })}
-                </Button>
-                <Button
-                  kind="ghost"
-                  size="sm"
-                  icon="X"
-                  disabled={bulk.isPending}
-                  onClick={() => bulk.mutate({ repoId, status: "rejected" })}
-                >
-                  {t("bulk.rejectAll")}
-                </Button>
-              </>
-            )}
-            {accepted > 0 && (
-              <Button
-                kind="primary"
-                size="sm"
-                icon="Sparkles"
-                style={{ marginLeft: "auto" }}
-                onClick={() => setCreatingSkill(true)}
-              >
-                {t("bulk.createSkill")}
-              </Button>
-            )}
-          </div>
-
-          <div style={s.list}>
-            {candidates.map((c) => (
-              <ConventionCard
-                key={c.id}
-                candidate={c}
-                pending={update.isPending || bulk.isPending}
-                onAccept={(id) => setStatus(id, "accepted")}
-                onReject={(id) => setStatus(id, "rejected")}
-                onUndo={(id) => setStatus(id, "pending")}
-                onEdit={setEditing}
-              />
-            ))}
-          </div>
-        </>
-      )}
     </AppShell>
   );
 }

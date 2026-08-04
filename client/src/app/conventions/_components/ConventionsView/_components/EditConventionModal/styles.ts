@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
 
 export const s = {
-  body: { display: "flex", flexDirection: "column", gap: 16 } satisfies CSSProperties,
+  /* Modal renders its children without padding — each modal supplies its own. */
+  body: { padding: 24, display: "flex", flexDirection: "column", gap: 16 } satisfies CSSProperties,
   footer: { display: "flex", justifyContent: "flex-end", gap: 10 } satisfies CSSProperties,
 };
 
