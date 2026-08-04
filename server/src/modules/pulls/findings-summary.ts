@@ -15,12 +15,14 @@
  */
 import {
   FINDINGS_PREVIEW_LIMIT,
-  RATIONALE_PREVIEW_CHARS,
   type Finding,
   type FindingSummary,
   type PrFindings,
   type SeverityCounts,
 } from '@devdigest/shared';
+
+/** Local cap for the hover-panel rationale preview. */
+const RATIONALE_PREVIEW_CHARS = 150;
 
 /** Sort weight — CRITICAL first, so a cap never drops the finding that matters. */
 export const SEVERITY_ORDER: Record<string, number> = {
@@ -94,7 +96,7 @@ export function emptySeverityCounts(): SeverityCounts {
 }
 
 export function emptyPrFindings(): PrFindings {
-  return { counts: emptySeverityCounts(), items: [], truncated: 0 };
+  return { counts: emptySeverityCounts(), items: [], remaining_count: 0 };
 }
 
 /**
@@ -154,5 +156,5 @@ export function buildPrFindings(rows: FindingSummaryRow[]): PrFindings {
   });
 
   const items = live.slice(0, FINDINGS_PREVIEW_LIMIT).map(toFindingSummary);
-  return { counts, items, truncated: live.length - items.length };
+  return { counts, items, remaining_count: live.length - items.length };
 }

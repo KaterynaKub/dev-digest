@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { RunRequest } from '@devdigest/shared';
 import type { RunEvent } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
-import { IdParams } from '../_shared/schemas.js';
+import { IdParams, ReviewIdParams } from '../_shared/schemas.js';
 import { NotFoundError } from '../../platform/errors.js';
 import { ReviewService, reviewDeps } from './service.js';
 
@@ -132,11 +132,11 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
   });
 
   // ---- Delete a whole review run (one agent's pass) + its findings --------
-  app.delete('/reviews/:id', { schema: { params: IdParams } }, async (req) => {
+  app.delete('/reviews/:reviewId', { schema: { params: ReviewIdParams } }, async (req) => {
     const { workspaceId } = await getContext(container, req);
-    const ok = await service.deleteReview(workspaceId, req.params.id);
+    const ok = await service.deleteReview(workspaceId, req.params.reviewId);
     if (!ok) throw new NotFoundError('Review not found');
-    return { ok: true };
+    return { ok: true, deleted: true };
   });
 
   // ---- Finding actions (accept / dismiss) ---------------------------------
