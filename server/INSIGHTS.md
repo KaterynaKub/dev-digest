@@ -126,3 +126,28 @@ a skill doesn't change what any past review's prompt actually contained. If a
 future refactor tries to unify the two version-bump rules "for consistency,"
 that would start bumping skill versions on cosmetic edits and break the
 version history's meaning as "what did the prompt actually see."
+
+## Trap: `@devdigest/shared` is vendored TWICE, with no sync script — every contract change is a two-file edit
+
+**Found:** 2026-08-04 · **Applies to:** src/vendor/shared/, ../client/src/vendor/shared/
+
+`server/tsconfig.json` maps `@devdigest/shared` → `server/src/vendor/shared`,
+and `client/tsconfig.json` maps the SAME specifier → `client/src/vendor/shared`.
+They are independent copies and there is no script in `scripts/` that syncs
+them; they have already drifted in comment text. Adding or changing a Zod
+contract in only one copy type-checks cleanly in that package and fails in the
+other — or, worse, silently lets the two ends of one HTTP call disagree about
+a field. Always apply a contract edit to BOTH files, and diff them when a DTO
+mismatch looks impossible.
+
+## Trap: `GitClient.readFile` throws on a missing file, but `MockGitClient.readFile` returns `''`
+
+**Found:** 2026-08-04 · **Applies to:** src/adapters/git/simple-git.ts, src/adapters/mocks.ts
+
+`SimpleGitClient.readFile` is a bare `fs.readFile`, so a missing path rejects;
+`MockGitClient.readFile` returns `''` for any path not in its `files` map. Code
+that samples repo files therefore sees two different failure shapes depending
+on the adapter, and a test can pass against the mock while the real client
+throws. Any read path must both catch the rejection AND treat empty content as
+"absent" — `modules/conventions/service.ts#readFileSafe` does both, and the
+evidence verifier drops empty-content files for the same reason.

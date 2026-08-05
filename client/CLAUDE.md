@@ -15,6 +15,13 @@ Search `docs/`, `specs/`, `INSIGHTS.md` first.
 - Pages stay thin; feature logic lives in colocated `_components/<Name>/`
   shaped as `Name.tsx` · `constants.ts` · `styles.ts` · `index.ts` · `Name.test.tsx`.
 - User-facing strings live in `messages/`, not inline in JSX.
+- Every async action shows a loader — no exceptions, and no silent gaps. A
+  triggering `Button` takes `loading={isPending}` (it swaps in a spinning
+  `RefreshCw` on its own) plus a `…` label from `messages/`; slow content areas
+  get `Skeleton` **with** a named `role="status"` line saying what is happening.
+  Where a mutation is followed by `router.push`, hold the busy state past
+  `onSuccess` until navigation lands — `isPending` alone flips back too early
+  and the UI reads as frozen. `CreateSkillFromConventionsModal` is the reference.
 
 ## Use when
 

@@ -15,12 +15,74 @@
       "body": "Scan the repo to surface house-rules — naming, error handling, structure — each backed by evidence you can turn into a Skill.",
       "cta": "Run extraction"
     },
-    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files"
+    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files",
+    "detectedFrom": "Detected from {count, plural, one {# sample file} other {# sample files}}",
+    "lastScan": "last scan {ago}",
+    "scannedWith": "scanned with {model}",
+    "neverScanned": "not scanned yet",
+    "noRepo": "Select a repository to scan for conventions.",
+    "model": "Model",
+    "modelSearch": "Search models…",
+    "usingDefault": "default",
+    "noModelsNote": "Add an OpenRouter key in Settings to pick a model — scans use the default until then."
+  },
+  "bulk": {
+    "acceptAll": "Accept all ({count})",
+    "rejectAll": "Reject all",
+    "createSkill": "Create skill",
+    "buildingDraft": "Building draft…",
+    "working": "Working…"
   },
   "card": {
     "confidence": "Confidence",
     "accepted": "Accepted",
     "accepting": "Accepting…",
-    "acceptAsSkill": "Accept as Skill"
+    "acceptAsSkill": "Accept as Skill",
+    "reject": "Reject",
+    "rejected": "Rejected",
+    "editFirst": "Edit first",
+    "undo": "Undo",
+    "edited": "edited"
+  },
+  "evidence": {
+    "copy": "Copy snippet",
+    "copied": "Copied",
+    "openOnGithub": "Open on GitHub"
+  },
+  "edit": {
+    "title": "Edit convention",
+    "category": "Category",
+    "rule": "Rule",
+    "ruleHint": "One imperative sentence. Name the concrete library or identifier.",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel"
+  },
+  "modal": {
+    "title": "Create skill from conventions",
+    "info": "Merged from {count, plural, one {# accepted convention} other {# accepted conventions}} in {repo}. Everything below is editable before you save.",
+    "name": "Name",
+    "description": "Description",
+    "type": "Type",
+    "enabled": "Enabled",
+    "enabledHint": "Extracted skills are always created disabled — switch this on in Skills Lab after a final read.",
+    "body": "Skill body",
+    "bodyFile": "{slug}.md",
+    "unsaved": "unsaved",
+    "tokens": "{count} tokens",
+    "cancel": "Cancel",
+    "create": "Create skill",
+    "creating": "Creating…",
+    "opening": "Opening skill…",
+    "savedAs": "Saved as v{version} · added to Skills Lab",
+    "draftError": "Could not build the skill draft.",
+    "loadingDraft": "Building draft…",
+    "loadingDraftHint": "Merging the accepted conventions into one skill body — this usually takes a few seconds."
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{count}m ago",
+    "hoursAgo": "{count}h ago",
+    "daysAgo": "{count}d ago"
   }
 }
