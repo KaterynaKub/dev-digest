@@ -1,11 +1,40 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { RunRequest } from '@devdigest/shared';
+import { RunRequest, IntentDeriveRequest } from '@devdigest/shared';
 import type { RunEvent } from '@devdigest/shared';
+import type { Container } from '../../platform/container.js';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { NotFoundError } from '../../platform/errors.js';
-import { ReviewService, reviewDeps } from './service.js';
+import { getFeatureModelOverride, readLinkAllowlist } from '../settings/feature-models.js';
+import { DEFAULT_INTENT_MODEL } from './constants.js';
+import { ReviewService, reviewDeps, type ReviewDeps } from './service.js';
+
+/**
+ * Build the full ReviewDeps from the composition root. The two resolvers
+ * `intentModel`/`linkAllowlist` are composed HERE (not inside `service.ts`,
+ * which must stay Container-free): `intentModel` resolves the workspace's
+ * `review_intent` override via `getFeatureModelOverride` — NOT
+ * `resolveFeatureModel` — so this module's own cheap `DEFAULT_INTENT_MODEL`
+ * survives as the fallback; `linkAllowlist` reads the workspace's
+ * `intent_link_allowlist` fail-safe.
+ */
+export function buildReviewDeps(container: Container): ReviewDeps {
+  return reviewDeps({
+    reviewRepo: container.reviewRepo,
+    agentsRepo: container.agentsRepo,
+    skillsRepo: container.skillsRepo,
+    git: container.git,
+    runBus: container.runBus,
+    repoIntel: container.repoIntel,
+    llm: (provider) => container.llm(provider),
+    github: () => container.github(),
+    httpFetcher: container.httpFetcher,
+    intentModel: async (workspaceId) =>
+      (await getFeatureModelOverride(container, workspaceId, 'review_intent')) ?? DEFAULT_INTENT_MODEL,
+    linkAllowlist: (workspaceId) => readLinkAllowlist(container, workspaceId),
+  });
+}
 
 /**
  * reviews module.
@@ -13,13 +42,15 @@ import { ReviewService, reviewDeps } from './service.js';
  *   GET    /runs/:id/events                            → SSE stream of RunEvent (replay-first)
  *   GET    /runs/:id/trace                             → the single-document RunTrace
  *   GET    /pulls/:id/reviews                          → persisted reviews + findings for a PR
+ *   GET    /pulls/:id/intent                           → persisted intent (no model call)
+ *   POST   /pulls/:id/intent/derive                    → re-derive intent (spends money)
  *   POST   /findings/:id/(accept|dismiss)              → finding actions
  */
 const FINDING_ACTIONS = ['accept', 'dismiss'] as const;
 export default async function reviewsRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
   const { container } = app;
-  const service = new ReviewService(reviewDeps(container));
+  const service = new ReviewService(buildReviewDeps(container));
 
   // ---- Run a review (manual trigger) -------------------------------
   // Tight per-route limit: each call can fan out to expensive LLM runs.
@@ -130,6 +161,31 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     const { workspaceId } = await getContext(container, req);
     return service.reviewsForPull(workspaceId, req.params.id);
   });
+
+  // ---- Intent ---------------------------------------------------------------
+  // Plain read — the persisted row only, no model call, no rate limit.
+  app.get('/pulls/:id/intent', { schema: { params: IdParams } }, async (req) => {
+    const { workspaceId } = await getContext(container, req);
+    const intent = await service.getIntent(workspaceId, req.params.id);
+    return { intent };
+  });
+
+  // Re-derive — spends money, so it is rate-limited like the review route.
+  app.post(
+    '/pulls/:id/intent/derive',
+    {
+      schema: { params: IdParams, body: IntentDeriveRequest },
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const { workspaceId } = await getContext(container, req);
+      const override = await getFeatureModelOverride(container, workspaceId, 'review_intent');
+      const model = override ?? DEFAULT_INTENT_MODEL;
+      const record = await service.deriveIntent(workspaceId, req.params.id, model, req.body?.force ?? true);
+      reply.code(201);
+      return record;
+    },
+  );
 
   // ---- Delete a whole review run (one agent's pass) + its findings --------
   app.delete('/reviews/:id', { schema: { params: IdParams } }, async (req) => {

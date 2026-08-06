@@ -1,5 +1,8 @@
 import type {
+  FeatureModelChoice,
   GitClient,
+  GitHubClient,
+  HttpFetcher,
   LLMProvider,
   Provider,
   Review,
@@ -22,6 +25,8 @@ import { slugify } from '../skills/helpers.js';
 import { REVIEW_STRATEGY } from './constants.js';
 import { taskLine } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
+import { IntentDeriver } from './intent.js';
+import { renderIntentBlock } from './intent-inputs.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -57,25 +62,47 @@ export interface ReviewRunDeps {
   llm: (provider: Provider) => Promise<LLMProvider>;
   /** Read-only: linked skill bodies in `agent_skills.order`, for buildSkillBodies. */
   skillsRepo: SkillsRepository;
+  /** Resolver: a missing GitHub token must fail intent derivation only, not the whole run/app. */
+  github: () => Promise<GitHubClient>;
+  /** Resolver: workspace override → registry default for the intent classifier's model. */
+  intentModel: (workspaceId: string) => Promise<FeatureModelChoice>;
+  /** SSRF-hardened outbound HTTP for the intent classifier's external-link fetch. */
+  httpFetcher: HttpFetcher;
+  /** Resolver reading workspace settings for the intent link allowlist. */
+  linkAllowlist: (workspaceId: string) => Promise<string[]>;
 }
 
 /**
  * Owns the background execution of queued agent runs (extracted from
- * ReviewService; behaviour unchanged). Loads the diff + intent once, then
- * map-reduces each agent, streaming events over the runBus and persisting each
- * review. Per-agent failures are isolated.
+ * ReviewService; behaviour unchanged). Loads the diff once, then — as a
+ * second, BEST-EFFORT shared pre-work step — derives PR intent (may be
+ * absent on failure), then map-reduces each agent, streaming events over the
+ * runBus and persisting each review. Per-agent failures are isolated.
  */
 export class ReviewRunExecutor {
+  private intentDeriver: IntentDeriver;
+
   constructor(
     private deps: ReviewRunDeps,
     private repo: ReviewRepository,
     private agents: AgentsRepository,
-  ) {}
+  ) {
+    this.intentDeriver = new IntentDeriver({
+      repo: this.repo,
+      git: this.deps.git,
+      github: this.deps.github,
+      llm: this.deps.llm,
+      httpFetcher: this.deps.httpFetcher,
+      linkAllowlist: this.deps.linkAllowlist,
+    });
+  }
 
   /**
    * Background execution of the queued agent runs (NOT awaited by the route).
-   * Loads the diff + intent once, then map-reduces each agent, streaming events
-   * over the runBus and persisting each review. Per-agent failures are isolated.
+   * Loads the diff once, then best-effort derives PR intent (a failure here
+   * degrades to "no intent section", never a failed run), then map-reduces
+   * each agent, streaming events over the runBus and persisting each review.
+   * Per-agent failures are isolated.
    */
   async executeRuns(
     workspaceId: string,
@@ -133,6 +160,25 @@ export class ReviewRunExecutor {
     }
     runLog.info(`Diff ready — ${diff.files.length} changed file(s); starting ${jobs.length} agent run(s)`);
 
+    // Best-effort intent derivation — a second shared pre-work step, AFTER
+    // the diff load. Unlike the diff load above, a failure here must NOT hit
+    // failAll: it degrades to "no intent section" for every queued run,
+    // exactly like repo-intel enrichment (modules/reviews/CLAUDE.md). The
+    // try/catch is mandatory — an uncaught throw here would fail every
+    // queued run over something that is, by design, optional context.
+    let intentBlock: string | undefined;
+    try {
+      const model = await this.deps.intentModel(workspaceId);
+      const res = await runLog.step(
+        'Deriving PR intent',
+        () => this.intentDeriver.derive({ workspaceId, pull, repoRow: repo, diff, model, force: false, runLog }),
+        { kind: 'tool' },
+      );
+      if (res) intentBlock = wrapUntrusted('intent', renderIntentBlock(res.intent));
+    } catch (err) {
+      runLog.info(`intent: derivation failed — ${(err as Error).message}; continuing without it`);
+    }
+
     for (const { agent, runId } of jobs) {
       const agentStart = Date.now();
       logger?.info(
@@ -140,7 +186,7 @@ export class ReviewRunExecutor {
         `review: agent "${agent.name}" started (${agent.provider}/${agent.model})`,
       );
       try {
-        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog);
+        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog, intentBlock);
         logger?.info(
           {
             runId,
@@ -172,6 +218,7 @@ export class ReviewRunExecutor {
     agent: AgentRow,
     runId: string,
     parentLog: RunLogger,
+    intentBlock: string | undefined,
   ): Promise<RunOutcome> {
     const start = Date.now();
     // Narrow the fanned-out pre-work logger to THIS run; the shared diff/intent
@@ -240,6 +287,10 @@ export class ReviewRunExecutor {
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
+        // Derived intent/scope — already wrapped via wrapUntrusted() above
+        // (this module's job, not reviewer-core's). Omitted when derivation
+        // failed or produced nothing meaningful.
+        ...(intentBlock ? { intent: intentBlock } : {}),
         task,
         sessionId: `${repo.owner}/${repo.name}#${pull.number}:${agent.name}`,
         onEvent: (e) => runLog.event(e.kind, e.msg, e.data),
@@ -522,7 +573,7 @@ export class ReviewRunExecutor {
         findings: 0,
         grounding,
       },
-      prompt_assembly: { system: agent.systemPrompt, skills: null, memory: null, specs: null, user: '' },
+      prompt_assembly: { system: agent.systemPrompt, skills: null, memory: null, specs: null, intent: null, user: '' },
       tool_calls: [],
       raw_output: '',
       memory_pulled: [],

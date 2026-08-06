@@ -6,10 +6,42 @@ import { z } from 'zod';
  */
 
 // ---- Intent ----
+/** Where one contributing input to a derived Intent came from. */
+export const IntentSource = z.enum([
+  'pr_title',
+  'pr_body',
+  'linked_issue',
+  'spec_file',
+  'external_link',
+  'file_list',
+]);
+export type IntentSource = z.infer<typeof IntentSource>;
+
 export const Intent = z.object({
   intent: z.string(),
   in_scope: z.array(z.string()),
   out_of_scope: z.array(z.string()),
+  /** 0-1 self-reported confidence, clamped/capped server-side. Absent = unknown. */
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .nullish()
+    .describe(
+      'Confidence (0-1) that this intent/scope is correct. With an empty or absent PR body, this MUST be <= 0.4.',
+    ),
+  /** Which inputs actually contributed to this intent — code narrows this, the model only proposes. */
+  sources: z
+    .array(IntentSource)
+    .nullish()
+    .describe('Which inputs you actually used (only ones present in the prompt).'),
+  /** What could not be fetched/resolved, in plain words — never invent content instead. */
+  missing_context: z
+    .array(z.string())
+    .nullish()
+    .describe(
+      'Notes about referenced context (issue, spec, link) that could not be fetched — never guess its content.',
+    ),
 });
 export type Intent = z.infer<typeof Intent>;
 

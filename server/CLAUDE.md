@@ -22,6 +22,11 @@ Search `docs/`, `specs/`, `INSIGHTS.md` first.
   (`llm: (provider) => container.llm(provider)`), so a missing key fails the one
   request that needs it rather than app startup.
 - Every domain table carries `workspace_id`; resolve it via `getContext()`.
+- All outbound HTTP goes through the `HttpFetcher` port
+  (`src/vendor/shared/adapters.ts`) and its SSRF-hardened implementation
+  (`src/adapters/http/safe-fetch.ts`). `node:dns` and `undici` live ONLY in
+  `src/adapters/http/` — a later feature that "just needs to fetch a URL" gets
+  its own narrow port, or a security review, never a raw `fetch`.
 
 ## Use when
 

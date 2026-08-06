@@ -8,6 +8,7 @@ import { api, API_BASE } from "../api";
 import { notify } from "../toast";
 import type {
   FindingActionKind,
+  PrIntentRecord,
   PrReviewComment,
   ReviewRecord,
   ReviewRunResponse,
@@ -132,6 +133,25 @@ export function useRunReview() {
     onSuccess: (_d, { prId }) => {
       qc.invalidateQueries({ queryKey: ["reviews", prId] });
     },
+  });
+}
+
+// ---- Intent (derived PR scope) ----
+/** Persisted intent for a PR — the row only, no model call. `null` before the first derivation. */
+export function useIntent(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["pr-intent", prId],
+    queryFn: () => api.get<{ intent: PrIntentRecord | null }>(`/pulls/${prId}/intent`),
+    enabled: !!prId,
+  });
+}
+
+/** Re-derive intent (bypasses the freshness check). Spends money — mirrors useRunReview's cost profile. */
+export function useDeriveIntent(prId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<PrIntentRecord>(`/pulls/${prId}/intent/derive`, { force: true }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pr-intent", prId] }),
   });
 }
 

@@ -151,3 +151,47 @@ on the adapter, and a test can pass against the mock while the real client
 throws. Any read path must both catch the rejection AND treat empty content as
 "absent" — `modules/conventions/service.ts#readFileSafe` does both, and the
 evidence verifier drops empty-content files for the same reason.
+
+## Trap: `PromptCache`'s default `now: () => 0` makes the cache permanent, not TTL'd
+
+**Found:** 2026-08-06 · **Applies to:** src/platform/model-router.ts, src/modules/reviews/link-cache.ts
+
+`PromptCache`'s constructor is `(ttlMs = 5*60*1000, now: () => number = () => 0)`.
+With the default `now`, every entry's `expires` is computed as `0 + ttlMs`, and
+the expiry check `hit.expires <= this.now()` becomes `ttlMs <= 0` — always
+false for a positive TTL, so nothing ever expires. A caller that constructs
+`new PromptCache(ttl)` (one argument) silently gets a cache that never evicts,
+which reads as "a TTL cache" in review but behaves as a permanent one in
+production. `modules/reviews/link-cache.ts` is the one place allowed to build
+a `PromptCache` for external-link fetches, and it always passes `Date.now`
+explicitly (`new PromptCache(LINK_CACHE_TTL_MS, Date.now)`) so the trap cannot
+be reintroduced at a call site. Any future `PromptCache` construction must do
+the same — the two-argument form is the only correct one.
+
+## Decision: undici's `connect.lookup` hook forwards straight into `net`/`tls`, which requires the callback shape to match `opts.all`
+
+**Found:** 2026-08-06 · **Applies to:** src/adapters/http/safe-fetch.ts
+
+`Agent({ connect: { lookup } })` is undici's documented DNS-rebinding
+mitigation (the hook runs at actual connect time, closing the check-then-fetch
+TOCTOU window), but the public docs do not spell out WHO calls it or how.
+Empirically: undici's connector (`node_modules/undici/lib/core/connect.js`)
+spreads its options straight into Node's own `net.connect`/`tls.connect`,
+which then invokes `lookup` with the SAME contract as `dns.lookup` — including
+an `opts.all` flag. When `opts.all` is true, the callback must be
+`(err, addresses[])` (an array of `{address, family}`); when it is false/unset,
+it must be the single-address 3-arg form `(err, address, family)`. A hook that
+always calls back in the 3-arg form (as a naive reading of "it's a dns.lookup
+replacement" suggests) makes `net`'s internals receive `undefined` where an
+address was expected, failing with `TypeError [ERR_INVALID_IP_ADDRESS]:
+Invalid IP address: undefined` — a failure that reads like a broken/incompatible
+hook, not a shape mismatch, and gives no hint that `opts.all` was the issue.
+Verified against a real HTTPS connection (`https://example.com/` and
+`https://github.com/`, including a same-host redirect): once the hook honours
+`opts.all` (returning the full filtered address list when true, the first
+survivor when false), the fetch completes normally and the IP block-list check
+still runs on the addresses actually connected to. This is the mechanism that
+made Step 4c of `specs/0004-intent-layer.md` work — the spec's open question
+about whether the hook "behaves as assumed under connection reuse" is resolved
+for the single-request path; connection-pooling reuse across multiple requests
+to the same host was not separately exercised.

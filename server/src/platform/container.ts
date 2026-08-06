@@ -6,6 +6,7 @@ import type {
   CodeIndex,
   Embedder,
   LLMProvider,
+  HttpFetcher,
 } from '@devdigest/shared';
 import type { AppConfig } from './config.js';
 import type { Db } from '../db/client.js';
@@ -19,6 +20,7 @@ import { RipgrepCodeIndex } from '../adapters/codeindex/ripgrep.js';
 import { OpenAIProvider } from '../adapters/llm/openai.js';
 import { AnthropicProvider } from '../adapters/llm/anthropic.js';
 import { OpenAIEmbedder } from '../adapters/embedder/openai.js';
+import { SafeHttpFetcher } from '../adapters/http/safe-fetch.js';
 import { OpenRouterProvider } from '@devdigest/reviewer-core';
 import { estimateCost } from '../adapters/llm/pricing.js';
 import { PriceBook } from './price-book.js';
@@ -57,6 +59,8 @@ export interface ContainerOverrides {
   /** repo-intel T3 adapters — only the indexer pipeline reads these. */
   depgraph?: DepGraph;
   tokenizer?: Tokenizer;
+  /** Outbound HTTP for the intent classifier's external-link fetch — tests inject MockHttpFetcher. */
+  httpFetcher?: HttpFetcher;
 }
 
 export class Container {
@@ -88,6 +92,7 @@ export class Container {
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
   private _priceBook?: PriceBook;
+  private _httpFetcher?: HttpFetcher;
 
   constructor(config: AppConfig, db: Db, private overrides: ContainerOverrides = {}) {
     this.config = config;
@@ -165,6 +170,17 @@ export class Container {
     if (this.overrides.tokenizer) return this.overrides.tokenizer;
     this._tokenizer ??= new TiktokenTokenizer();
     return this._tokenizer;
+  }
+
+  /**
+   * SSRF-hardened outbound HTTP for the intent classifier's external-link
+   * fetch (the project's first, and deliberately only, general egress path).
+   * Lazy singleton so the undici Agent and its connection pool are shared.
+   */
+  get httpFetcher(): HttpFetcher {
+    if (this.overrides.httpFetcher) return this.overrides.httpFetcher;
+    this._httpFetcher ??= new SafeHttpFetcher();
+    return this._httpFetcher;
   }
 
   /**

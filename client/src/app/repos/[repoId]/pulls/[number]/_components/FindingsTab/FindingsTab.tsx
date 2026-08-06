@@ -2,6 +2,7 @@
 
 import React, { useCallback } from "react";
 import { Icon, Badge, Button, SectionLabel, EmptyState } from "@devdigest/ui";
+import { IntentCard } from "../IntentCard";
 import { RunStatus } from "../RunStatus";
 import { RunHistory } from "../RunHistory/RunHistory";
 import { ReviewRunAccordion } from "../ReviewRunAccordion";
@@ -95,6 +96,8 @@ export function FindingsTab({
 
   return (
     <section>
+      <IntentCard prId={prId} />
+
       {liveRunIds.length > 0 && (
         <div style={s.liveRunSection}>
           <SectionLabel

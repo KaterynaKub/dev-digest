@@ -28,6 +28,19 @@
     "liveNote": "Prices are pulled live from OpenRouter — USD per 1M input/output tokens.",
     "noKeyNote": "Add an OpenRouter API key under API Keys to load the model list and prices."
   },
+  "intentLinks": {
+    "title": "PR Intent · External Links",
+    "body": "When deriving a PR's intent, the reviewer may follow a link the PR author included in the description — but only to a host you explicitly allow below.",
+    "placeholder": "example.com or *.example.com",
+    "add": "Add",
+    "remove": "Remove",
+    "invalidPattern": "Enter a bare host (example.com) or a subdomain wildcard (*.example.com) — no scheme, path, or port.",
+    "duplicate": "Already on the list.",
+    "empty": "No hosts are allowed yet — external links in a PR description will NOT be fetched during intent derivation. This is the default; add a host below to change it.",
+    "wildcardHint": "\"*.example.com\" matches subdomains only (e.g. docs.example.com) — it does NOT also match the apex \"example.com\". List the apex separately if you need both.",
+    "save": "Save",
+    "saving": "Saving…"
+  },
   "workspace": {
     "title": "Workspace",
     "body": "Appearance and sync preferences for this workspace.",

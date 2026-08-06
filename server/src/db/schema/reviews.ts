@@ -69,6 +69,15 @@ export const prIntent = pgTable('pr_intent', {
   intent: text('intent').notNull(),
   inScope: jsonb('in_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   outOfScope: jsonb('out_of_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  // Nullable (not defaulted): an UNKNOWN confidence must be distinguishable
+  // from a confident 0 — same reasoning as agent_runs.costUsd (server/INSIGHTS.md).
+  confidence: doublePrecision('confidence'),
+  sources: jsonb('sources').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  missingContext: jsonb('missing_context').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  // Nullable: no derivation has ever run for this PR yet (row seeded some
+  // other way, or pre-dating this column).
+  headSha: text('head_sha'),
+  derivedAt: timestamp('derived_at', { withTimezone: true }).defaultNow(),
 });
 
 export const prBrief = pgTable('pr_brief', {

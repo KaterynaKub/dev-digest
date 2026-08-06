@@ -56,9 +56,21 @@ export const ReviewRunResponse = z.object({
 });
 export type ReviewRunResponse = z.infer<typeof ReviewRunResponse>;
 
-/** Intent persisted for a PR (the Intent plus the pr_id it scopes). */
-export const PrIntentRecord = Intent.extend({ pr_id: z.string() });
+/** Intent persisted for a PR (the Intent plus the pr_id it scopes + freshness). */
+export const PrIntentRecord = Intent.extend({
+  pr_id: z.string(),
+  /** PR head sha the intent was derived against; null if never derived. */
+  head_sha: z.string().nullable(),
+  /** ISO timestamp of the last derivation; null if never derived. */
+  derived_at: z.string().nullable(),
+});
 export type PrIntentRecord = z.infer<typeof PrIntentRecord>;
+
+/** Body for POST /pulls/:id/intent/derive. `force` bypasses the freshness check. */
+export const IntentDeriveRequest = z
+  .object({ force: z.boolean().optional() })
+  .optional();
+export type IntentDeriveRequest = z.infer<typeof IntentDeriveRequest>;
 
 /** Smart-diff response for a PR (the SmartDiff). */
 export const SmartDiffResponse = SmartDiff;
