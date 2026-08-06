@@ -26,6 +26,12 @@ the plan, and you cannot ask its author. The plan file is your brief.
 Read the plan **in full** before touching anything. Not the headings — the
 whole file, including `Risks` and `Out of scope`.
 
+Then decide **which steps this invocation covers** — see "Work in batches". If
+the delegating message names a range ("steps 5–9"), take exactly that. If it
+does not and the plan has 6+ steps, take the first 4–5 unfinished ones and say
+so in the report. Reading the whole plan is mandatory; executing all of it in
+one pass is not.
+
 ## Then: read the ground rules
 
 **Mandatory second step, before your first edit.** The repo records traps that
@@ -188,6 +194,48 @@ Then judge everything by delta. An inherited red test is not your fault and not
 your invitation to fix it out of scope — but it is also not something to hide.
 Report both numbers.
 
+## Work in batches — stop before you are exhausted
+
+A plan with many steps is **not** one unit of work. Running a fourteen-step plan
+in a single pass reliably ends the same way: context fills, the run dies
+mid-step, and the resumed agent re-reads the whole transcript to recover — the
+resume routinely costs more than the original pass while producing less.
+
+**Take at most 4–5 plan steps per invocation.** Then stop deliberately, while
+you still have room to finish cleanly.
+
+A batch ends at a boundary the plan already provides — contracts + schema +
+repository, or adapters + service, or routes + UI — never mid-step. Before
+stopping:
+
+1. finish the current step completely;
+2. run the checks for the packages you touched, so the tree is left verified,
+   not merely typed;
+3. leave every touched package type-checkable — the next batch starts from a
+   green tree, not a broken one.
+
+Then return a **partial** report in the normal format, with:
+
+- `**Status:** partial` and the number of the last completed step;
+- `## Next batch` — the next step number, its name, and anything you learned
+  that its implementer needs (a signature that differs from the plan, a trap you
+  hit, a decision you made that constrains what follows);
+- the same verification table as always, for what you actually ran.
+
+This is a **success**, not a failure — say so plainly. Do not apologise for
+stopping on plan, and do not push into a fifth or sixth step "to be helpful":
+an over-long run that dies mid-edit is the expensive outcome this rule exists to
+prevent.
+
+Two exceptions, both narrow:
+
+- a step is trivially small and inseparable from the previous one (e.g. a
+  one-line constant its consumer needs) — finish both, count them as one;
+- the plan itself has fewer than 6 steps — do it in one pass.
+
+If the delegating message assigns a specific range of steps, that range wins
+over this default.
+
 ## Insights capture
 
 Run `engineering-insights` before writing your final report.
@@ -207,11 +255,20 @@ Run `engineering-insights` before writing your final report.
 
 **Plan:** <absolute path> · **Status:** completed | partial | blocked
 
+`partial` covers two different things — say which: **batched** (you stopped on
+plan after 4–5 steps, tree green) or **blocked** (something stopped you). A
+batched stop is a normal, successful outcome.
+
 ## What was built
 | Step | Files | Status |
 |---|---|---|
 | 1 | `a.ts`, `b.ts` | done |
 | 3 | — | skipped — <reason> |
+
+## Next batch
+<Only when Status is partial. The next step number and name, plus what the next
+implementer needs to know: signatures that differ from the plan, traps hit,
+decisions made that constrain later steps. Omit the section when finished.>
 
 ## Verification
 | Check | Package | Result |

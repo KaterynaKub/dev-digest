@@ -86,6 +86,18 @@ export const FEATURE_MODELS: FeatureModelDef[] = [
 
 // ---- Settings ----
 /**
+ * One allowlist entry: an exact host (`example.com`) or `*.host` for
+ * subdomains only — the apex is NOT covered by the wildcard form and must be
+ * listed separately. Rejects schemes, paths, ports, mid-pattern wildcards
+ * (`a.*.com`), and a bare `*` — a user cannot type an allow-everything entry.
+ */
+export const IntentLinkPattern = z.string().regex(/^(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}$/i);
+/** Workspace allowlist of hosts the intent classifier may fetch. Empty by
+ *  default — deny-by-default, so an unconfigured workspace fetches nothing. */
+export const IntentLinkAllowlist = z.array(IntentLinkPattern).max(50);
+export type IntentLinkAllowlist = z.infer<typeof IntentLinkAllowlist>;
+
+/**
  * Non-secret prefs/config. Secrets (API keys) are NOT stored here — they go
  * through SecretsProvider (.env in MVP). Settings is a flat key/value bag,
  * surfaced as a typed object for the well-known keys.
@@ -98,6 +110,8 @@ export const SettingsKnown = z.object({
   automatic_reviews: z.boolean().default(false),
   /** Per-feature model overrides (provider+model), keyed by FeatureModelId. */
   feature_models: z.record(FeatureModelId, FeatureModelChoice).default({}),
+  /** Hosts the intent classifier may fetch an external link from. Empty = fetch nothing (default). */
+  intent_link_allowlist: IntentLinkAllowlist.default([]),
 });
 export type SettingsKnown = z.infer<typeof SettingsKnown>;
 

@@ -83,12 +83,40 @@ plain "yes, go" is enough to unblock me>
 **What I can plan without an answer:** <a concrete part, or "nothing meaningful">
 ```
 
+### Case C — the request is clear, but a resolution would reshape the plan
+
+Distinct from Case B: the *ask* is decidable, yet during reconnaissance you hit
+a decision that is the user's to make and that changes the plan's shape rather
+than one of its steps. Stop and ask **before writing the plan**, not after.
+
+The trigger is architectural surface, not difficulty:
+
+- a **new port** in `adapters.ts` (the repo has no HTTP-fetch port, no queue
+  port, no mail port — introducing one is a decision);
+- a **new runtime dependency**, or a new external service the repo does not
+  already call;
+- a **new externally-reachable surface**: anything that fetches a URL,
+  accepts a webhook, or acts on attacker-influenceable input;
+- **credentials or scope** for any of the above (which hosts, which tokens,
+  auth or none);
+- a change that would need a **breaking contract rename** across both vendored
+  copies.
+
+For these, the cost of guessing is a full rewrite of the plan, not an edited
+step. Ask with concrete options and a recommendation, using the same
+clarification block — then plan once, with the answers in hand.
+
+If only *part* of the plan depends on the answer, write the independent part
+and mark the dependent part explicitly as blocked in `Open questions`.
+
 ### When not to ask
 
 If the request is concrete ("add a `costUsd` field to the run summary
 endpoint", "extract the diff loader into its own module") — ask nothing, plan.
 Over-clarifying a clear task is the same failure as planning blindly on an
-unclear one.
+unclear one. Case C is about **architectural surface**, not about size: a large
+change with no new port and no new external surface still gets planned, not
+questioned.
 
 ## Reconnaissance
 

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import {
   FEATURE_MODELS,
   FeatureModelChoice,
+  IntentLinkAllowlist,
   type FeatureModelId,
 } from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
@@ -54,4 +55,21 @@ export async function resolveFeatureModel(
   id: FeatureModelId,
 ): Promise<FeatureModelChoice> {
   return (await getFeatureModelOverride(container, workspaceId, id)) ?? DEFAULTS[id];
+}
+
+/**
+ * The workspace's `intent_link_allowlist`, fail-safe-parsed. An invalid
+ * stored value (wrong shape, corrupted) is treated as UNSET — i.e. an empty
+ * allowlist, which fetches nothing — mirroring this module's existing rule
+ * for `feature_models` (see `modules/settings/CLAUDE.md`): fail closed, never
+ * "allow everything" and never a 500.
+ */
+export async function readLinkAllowlist(container: Container, workspaceId: string): Promise<string[]> {
+  const rows = await container.db
+    .select({ key: t.settings.key, value: t.settings.value })
+    .from(t.settings)
+    .where(eq(t.settings.workspaceId, workspaceId));
+  const settings = rowsToSettings(rows) as { intent_link_allowlist?: unknown };
+  const parsed = IntentLinkAllowlist.safeParse(settings.intent_link_allowlist);
+  return parsed.success ? parsed.data : [];
 }

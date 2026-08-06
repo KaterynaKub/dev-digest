@@ -1,4 +1,19 @@
 {
+  "intent": {
+    "title": "INTENT",
+    "inScope": "IN SCOPE",
+    "outOfScope": "OUT OF SCOPE",
+    "rederive": "Re-derive",
+    "rederiving": "Re-deriving…",
+    "loading": "Deriving PR intent…",
+    "empty": "No intent derived yet for this PR.",
+    "emptyCta": "Derive it from the title, description, linked issue, and changed files.",
+    "confidence": "Confidence: {pct}%",
+    "lowConfidence": "Low confidence — this PR had little description to go on. Treat the scope below as a rough guide, not a guarantee.",
+    "missingContext": "Missing context",
+    "missingContextLinkHint": "Configure allowed external-link hosts in Settings → Models.",
+    "error": "Couldn't load the derived intent for this PR."
+  },
   "finding": {
     "accepted": "accepted",
     "dismissed": "dismissed",

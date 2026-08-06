@@ -19,11 +19,16 @@ import { reduceReviews, scoreFromFindings, sliceDiff } from './reduce.js';
  * This is the pure core lifted out of the server's `ReviewService.runOneAgent`:
  * assemble prompt → single-pass OR map-reduce per file → reduce → SHARED
  * citation-grounding gate. It performs NO I/O beyond the injected LLM provider
- * (no DB, GitHub, fs, memory retrieval, intent, or persistence) — those stay in
- * the caller (server persists + streams SSE; runner posts + writes an artifact).
+ * (no DB, GitHub, fs, memory retrieval, or persistence) — those stay in the
+ * caller (server persists + streams SSE; runner posts + writes an artifact).
  *
- * Skill bodies / memory / specs are RESOLVED strings here: the caller turns
- * AgentManifest skill slugs into bodies (DB in the studio, fs in the runner).
+ * Skill bodies / memory / specs / intent are RESOLVED STRINGS here: the caller
+ * turns AgentManifest skill slugs into bodies (DB in the studio, fs in the
+ * runner), and — for `intent` specifically — derives it via a classifier call
+ * server-side (`modules/reviews/intent.ts`) and pre-renders + wraps it before
+ * ever calling this function. This package does not derive intent and applies
+ * no trust policy to it; it only forwards the already-wrapped string into
+ * `assemblePrompt`.
  */
 
 /** Default map-reduce threshold (matches the server's FILE_MAP_THRESHOLD_LINES). */
@@ -71,6 +76,12 @@ export interface ReviewInput {
   /** PR author's description/body (untrusted; truncated + delimiter-wrapped in
       the prompt). Empty/undefined → section omitted. */
   prDescription?: string;
+  /**
+   * Derived PR intent/scope — PRE-RENDERED and ALREADY WRAPPED by the caller
+   * (mirrors `skills`). Forwarded verbatim into `assemblePrompt`'s `intent`
+   * slot. Empty/undefined → section omitted.
+   */
+  intent?: string;
   /** Task framing line, e.g. "Review PR #482 …". */
   task?: string;
   /** Override the structured-output retry budget. */
@@ -146,6 +157,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewOutco
     callers: input.callers,
     repoMap: input.repoMap,
     prDescription: input.prDescription,
+    intent: input.intent,
     task: input.task,
   };
 

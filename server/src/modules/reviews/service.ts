@@ -1,4 +1,10 @@
-import type { FindingActionKind, RunEventKind, RunTrace } from '@devdigest/shared';
+import type {
+  FeatureModelChoice,
+  FindingActionKind,
+  PrIntentRecord,
+  RunEventKind,
+  RunTrace,
+} from '@devdigest/shared';
 import type { RunBus } from '../../platform/sse.js';
 // AgentRow comes from the repository that owns it, not from db/rows directly —
 // the service layer stays clear of the persistence module.
@@ -8,6 +14,8 @@ import { AppError, NotFoundError } from '../../platform/errors.js';
 import type { ReviewRepository } from './repository.js';
 import { type ReviewDto, type ReviewDtoFinding } from './helpers.js';
 import { ReviewRunExecutor, type ReviewRunDeps, type Logger } from './run-executor.js';
+import { IntentDeriver } from './intent.js';
+import { loadDiff } from './diff-loader.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
 
@@ -51,6 +59,20 @@ export function reviewDeps(container: {
   runBus: RunBus;
   repoIntel: ReviewRunDeps['repoIntel'];
   llm: ReviewRunDeps['llm'];
+  github: ReviewRunDeps['github'];
+  httpFetcher: ReviewRunDeps['httpFetcher'];
+  /**
+   * Resolver for the intent classifier's model choice — a workspace override
+   * (`getFeatureModelOverride`, NOT `resolveFeatureModel`, so this module's
+   * own cheap default survives) or `DEFAULT_INTENT_MODEL`. Built by the
+   * caller (`routes.ts` / boot-time reaper in `app.ts`), never derived here,
+   * because it needs `getFeatureModelOverride` + `DEFAULT_INTENT_MODEL` which
+   * belong to `modules/settings` and `modules/reviews/constants` respectively
+   * — this factory stays a plain structural adapter over `Container`.
+   */
+  intentModel: ReviewRunDeps['intentModel'];
+  /** Resolver reading the workspace's `intent_link_allowlist` (see `readLinkAllowlist`). */
+  linkAllowlist: ReviewRunDeps['linkAllowlist'];
 }): ReviewDeps {
   return {
     repo: container.reviewRepo,
@@ -60,6 +82,10 @@ export function reviewDeps(container: {
     runBus: container.runBus,
     repoIntel: container.repoIntel,
     llm: (provider) => container.llm(provider),
+    github: container.github,
+    httpFetcher: container.httpFetcher,
+    intentModel: container.intentModel,
+    linkAllowlist: container.linkAllowlist,
   };
 }
 
@@ -68,12 +94,23 @@ export class ReviewService {
   private agents: AgentsRepository;
   private executor: ReviewRunExecutor;
   private runBus: RunBus;
+  private deps: ReviewDeps;
+  private intentDeriver: IntentDeriver;
 
   constructor(deps: ReviewDeps) {
     this.repo = deps.repo;
     this.agents = deps.agentsRepo;
     this.runBus = deps.runBus;
+    this.deps = deps;
     this.executor = new ReviewRunExecutor(deps, this.repo, this.agents);
+    this.intentDeriver = new IntentDeriver({
+      repo: this.repo,
+      git: deps.git,
+      github: deps.github,
+      llm: deps.llm,
+      httpFetcher: deps.httpFetcher,
+      linkAllowlist: deps.linkAllowlist,
+    });
   }
 
   // ===========================================================================
@@ -217,5 +254,46 @@ export class ReviewService {
 
   async getRunTrace(runId: string): Promise<RunTrace | undefined> {
     return this.repo.getRunTrace(runId);
+  }
+
+  // ===========================================================================
+  // Intent — GET reads the persisted row only; deriveIntent runs the classifier.
+  // ===========================================================================
+
+  /** The persisted intent for a PR, or `null` when none has been derived yet. */
+  async getIntent(workspaceId: string, prId: string): Promise<PrIntentRecord | null> {
+    const pull = await this.repo.getPull(workspaceId, prId); // workspace scope check
+    if (!pull) throw new NotFoundError('Pull request not found');
+    const stored = await this.repo.getIntent(prId);
+    if (!stored) return null;
+    return { pr_id: prId, ...stored };
+  }
+
+  /**
+   * Run the classifier and persist the result. Unlike a review run this IS
+   * awaited — it is one cheap call, and the UI needs the result to render the
+   * INTENT card. `force: true` bypasses the head-sha freshness check.
+   */
+  async deriveIntent(
+    workspaceId: string,
+    prId: string,
+    model: FeatureModelChoice,
+    force: boolean,
+  ): Promise<PrIntentRecord> {
+    const pull = await this.repo.getPull(workspaceId, prId);
+    if (!pull) throw new NotFoundError('Pull request not found');
+    const repoRow = await this.repo.getRepo(pull.repoId);
+    if (!repoRow) throw new NotFoundError('Repo not found');
+    const diff = await loadDiff(this.deps.git, this.repo, workspaceId, pull, repoRow);
+    const result = await this.intentDeriver.derive({ workspaceId, pull, repoRow, diff, model, force });
+    if (!result) throw new AppError('intent_derivation_failed', 'Could not derive intent for this PR', 502);
+    // Re-read the persisted row for its true head_sha/derived_at rather than
+    // hand-computing them here — correct for BOTH outcomes: a fresh derive
+    // (upsertIntent just wrote pull.headSha + now()) and a reused stored
+    // intent (head_sha/derived_at reflect when it was ACTUALLY derived, not
+    // this call).
+    const stored = await this.repo.getIntent(prId);
+    if (!stored) throw new AppError('intent_derivation_failed', 'Intent derivation did not persist', 502);
+    return { pr_id: prId, ...stored };
   }
 }

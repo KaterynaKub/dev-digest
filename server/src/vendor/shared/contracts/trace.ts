@@ -48,6 +48,11 @@ export const PromptAssembly = z.object({
   repo_map: z.string().nullish(),
   /** PR author's description/body (truncated); null when absent. */
   pr_description: z.string().nullish(),
+  /** Derived intent/scope block (pre-rendered, wrapped); null when absent.
+   *  `nullish` — traces persisted before this field existed omit it entirely,
+   *  and `nullable` alone fails to parse every one of those (same reasoning
+   *  as `RunStats.cost_usd`). */
+  intent: z.string().nullish(),
   user: z.string(),
 });
 export type PromptAssembly = z.infer<typeof PromptAssembly>;

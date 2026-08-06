@@ -31,6 +31,9 @@ import type {
   AuthWorkspace,
   SecretsProvider,
   SecretKey,
+  HttpFetcher,
+  FetchedDocument,
+  FetchFailure,
 } from '@devdigest/shared';
 import { parseUnifiedDiff } from './git/diff-parser.js';
 
@@ -332,5 +335,25 @@ export class MockSecretsProvider implements SecretsProvider {
   constructor(private secrets: Partial<Record<string, string>> = {}) {}
   async get(key: SecretKey): Promise<string | undefined> {
     return this.secrets[key as string];
+  }
+}
+
+// ---------- Mock HttpFetcher ----------
+/** No real I/O. `calls` records every URL actually looked up (keyed by exact
+ *  URL) — the way a hermetic test proves "zero network calls" for an empty
+ *  allowlist (constraint 9a): assert `calls` stays empty. */
+export class MockHttpFetcher implements HttpFetcher {
+  public calls: string[] = [];
+  constructor(private byUrl: Record<string, FetchedDocument | FetchFailure> = {}) {}
+
+  async get(
+    url: string,
+    _opts: { allowlist: string[]; timeoutMs?: number },
+  ): Promise<{ ok: true; doc: FetchedDocument } | { ok: false; failure: FetchFailure }> {
+    this.calls.push(url);
+    const entry = this.byUrl[url];
+    if (!entry) return { ok: false, failure: { url, reason: 'network_error' } };
+    if ('reason' in entry) return { ok: false, failure: entry };
+    return { ok: true, doc: entry };
   }
 }

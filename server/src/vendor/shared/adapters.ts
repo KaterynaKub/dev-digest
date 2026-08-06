@@ -267,6 +267,61 @@ export interface CodeIndex {
   references(repo: RepoRef, symbol: string): Promise<CodeReference[]>;
 }
 
+// ---------- HttpFetcher (outbound HTTP; SSRF-hardened, narrow) ----------
+/** A successfully fetched, validated, size-capped external document. */
+export interface FetchedDocument {
+  url: string; // the FINAL url after same-host redirects
+  host: string; // normalised host actually connected to
+  status: number;
+  contentType: string;
+  /** Already sanitised to text and truncated. Never raw HTML. */
+  text: string;
+  bytes: number; // bytes read before the cap
+  truncated: boolean;
+}
+
+/** Why a fetch did not produce a document. Maps 1:1 to a missing_context note. */
+export type FetchFailureReason =
+  | 'not_allowlisted'
+  | 'bad_scheme'
+  | 'blocked_address'
+  | 'dns_failed'
+  | 'redirect_host_changed'
+  | 'too_many_redirects'
+  | 'timeout'
+  | 'too_large'
+  | 'unsupported_content_type'
+  | 'http_error'
+  | 'network_error';
+
+export interface FetchFailure {
+  url: string;
+  reason: FetchFailureReason;
+  status?: number;
+}
+
+/**
+ * The project's first outbound-HTTP port. Deliberately narrow and
+ * already-safe: it exposes ONE method returning an already-fetched,
+ * already-validated, already-truncated document — never a `Response`, a
+ * stream, a redirect chain, or headers. A caller cannot misuse this into an
+ * SSRF, because every decision (scheme, allowlist, DNS, redirects, size,
+ * type) is made inside the adapter. Do not widen this port into a general
+ * HTTP client — the next feature that needs outbound HTTP gets its own
+ * narrow port, or a security review.
+ */
+export interface HttpFetcher {
+  /**
+   * GET one https URL under a deny-by-default allowlist. NEVER sends
+   * credentials. Resolves to a document or a structured failure — it does
+   * not throw for an expected failure (403, timeout, blocked host).
+   */
+  get(
+    url: string,
+    opts: { allowlist: string[]; timeoutMs?: number },
+  ): Promise<{ ok: true; doc: FetchedDocument } | { ok: false; failure: FetchFailure }>;
+}
+
 // ---------- Auth (pluggable; MVP = LocalNoAuthProvider) ----------
 export interface AuthUser {
   id: string;
