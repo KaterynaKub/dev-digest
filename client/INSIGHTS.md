@@ -191,3 +191,78 @@ shareable and Back behaves as expected. `SkillDetail` is a pane inside the
 button undo a tab switch rather than leave the page, and it would push a history
 entry per tab click. Copy the `?tab=` idiom only for a tab bar that owns its
 whole route.
+
+## Trap: two sequential `setParam` calls race on the `search` captured in the current render
+
+**Found:** 2026-08-06 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/page.tsx
+
+`page.tsx`'s `setParam(key, val)` builds its `URLSearchParams` from the
+`search` returned by `useSearchParams()` in the *current* render, then calls
+`router.replace`. Calling it twice in a row to set two keys (e.g. `tab` and
+`finding`) does NOT compose: both calls read the same stale `search` snapshot,
+so the second `router.replace` overwrites the first — only the second key
+survives in the URL. Setting more than one query param atomically needs a
+single `URLSearchParams` built once and a single `router.replace` (see
+`goToFinding` in the same file), never two `setParam` calls back to back.
+
+## Trap: `reviews.run_id` being nullable makes "open the accordion for THIS run" the wrong test — use finding membership instead
+
+**Found:** 2026-08-06 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/ReviewRunAccordion
+
+`ReviewRunAccordion`'s open-on-navigation effect originally fired only on
+`review.run_id === targetRunId`. `reviews.run_id` is nullable
+(`review-api.ts`), so any review row without a run id can never be targeted
+that way — including exactly the older runs a Smart Diff finding (which only
+knows its `review_id`/`finding_id`, not a `run_id`) needs to reach. The robust
+condition is `review.findings.some(f => f.id === targetFindingId)`: membership
+of the target inside the review's own findings array, independent of whether
+`run_id` is set. This also has the side effect of correctly opening an older
+run's accordion even though `defaultOpen={i === 0}` only opens the newest one.
+
+## Trap: `t.rich`'s tag functions only wrap text inside their own XML-style tag in the message string
+
+**Found:** 2026-08-06 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/SmartDiffSection
+
+Passing an `add`/`del` tag function to `t.rich("smartDiff.stats", { additions, add: (chunks) => <span .../> })`
+while the message itself was still `"{files} files · +{additions} -{deletions}"`
+(no `<add>`/`<del>` tags in the string) compiles, renders, and the tests still
+pass — but every render throws a swallowed `IntlError: FORMATTING_ERROR: The
+intl string context variable "additions" was not provided`, visible only as
+console noise in the test run, not as a failing assertion or an `ErrorBoundary`
+prop-mismatch. The `additions`/`deletions` values need to be passed in the
+values map (not folded into the tag closure) AND the message string must wrap
+the placeholder in the matching tag: `"{files} files · <add>+{additions}</add>
+<del>-{deletions}</del>"`. Grep test stderr for `IntlError` after adding any
+`t.rich` call — a green suite can still be hiding one.
+
+## Trap: React still warns about `borderColor`/`borderLeftColor` on rerender even though both are longhand
+
+**Found:** 2026-08-06 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/FindingCard/styles.ts
+
+`FindingCard/styles.ts#s.card`'s comment claims "All-longhand… never mix
+`border` shorthand with `borderLeft`" as the fix for React's "Updating a style
+property during rerender… can lead to styling bugs" warning. Both `borderColor`
+and `borderLeftColor` already ARE longhand here, yet the warning still fires
+console-only (not a test failure) whenever a `FindingCard` rerenders with a
+different `focused`/severity color — e.g. `FindingsPanel`'s navigate-by-id
+effect, which changes `focusIdx` and hence `focused` on a rerender. React's
+check treats `borderColor` and `borderLeftColor` as conflicting because they
+both resolve to the same visual side (left), not because one is shorthand —
+the file's own comment is describing the wrong mechanism. This is pre-existing
+(the styles file was not touched by spec 0005c) and cosmetic — it does not fail
+any assertion — but any new test that rerenders a `FindingsPanel`/
+`ReviewRunAccordion` tree with changing focus will show this stderr noise.
+
+## Tooling: jsdom does not implement `Element.prototype.scrollIntoView`
+
+**Found:** 2026-08-06 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/FindingsPanel, .../ReviewRunAccordion
+
+Any component that calls `.scrollIntoView(...)` (both `FindingsPanel` and
+`ReviewRunAccordion` do, to bring a navigated-to card/accordion into view)
+throws `TypeError: element.scrollIntoView is not a function` under
+vitest+jsdom the first time the code path actually runs, even though the
+component renders fine otherwise. Stub it once per test file before any
+render exercises the path: `Element.prototype.scrollIntoView = vi.fn();`. It
+is a prototype-level stub shared across tests in the file — reset call counts
+with `beforeEach(() => vi.mocked(Element.prototype.scrollIntoView).mockClear())`
+when a test asserts call counts (e.g. "scrolls again on a nonce bump").

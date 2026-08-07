@@ -24,4 +24,8 @@ export const s = {
     color: "var(--text-secondary)",
   } satisfies CSSProperties,
   list: { display: "flex", flexDirection: "column", gap: 12 } satisfies CSSProperties,
+  // scrollMarginTop keeps a smoothly-scrolled-to card clear of the sticky
+  // header — mirrors ReviewRunAccordion's own scrollMarginTop. Lives on this
+  // wrapper rather than on FindingCard, which stays unmodified.
+  listItem: { scrollMarginTop: 16 } satisfies CSSProperties,
 } as const;

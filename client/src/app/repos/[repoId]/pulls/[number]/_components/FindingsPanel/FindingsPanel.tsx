@@ -17,16 +17,23 @@ export function FindingsPanel({
   prId,
   repoFullName,
   headSha,
+  targetFindingId = null,
+  targetNonce = 0,
 }: {
   findings: FindingRecord[];
   prId: string;
   repoFullName?: string | null;
   headSha?: string | null;
+  /** A finding to focus/scroll to (e.g. from a Smart Diff badge click). */
+  targetFindingId?: string | null;
+  /** Bumped by the caller to re-trigger the scroll on a repeat click. */
+  targetNonce?: number;
 }) {
   const t = useTranslations("prReview");
   const action = useFindingAction();
   const [hideLow, setHideLow] = React.useState(false);
   const [focusIdx, setFocusIdx] = React.useState(0);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const shown = React.useMemo(() => visibleFindings(findings, hideLow), [findings, hideLow]);
 
@@ -45,6 +52,28 @@ export function FindingsPanel({
     return () => window.removeEventListener("keydown", handler);
   }, [shown, focusIdx, action, prId]);
 
+  // Focus a finding requested from outside (e.g. a Smart Diff mark click).
+  // Scoped to `containerRef` — several accordions/panels can be open at once,
+  // so an unscoped querySelector could grab a sibling panel's card.
+  React.useEffect(() => {
+    if (!targetFindingId) return;
+    if (!findings.some((f) => f.id === targetFindingId)) return; // not owned by this panel
+    if (!shown.some((f) => f.id === targetFindingId)) {
+      // A reviewer who clicked this finding in the Smart Diff asked for it
+      // explicitly — a display filter must not silently swallow the target.
+      // This effect re-runs when `shown` changes (hideLow flips) and
+      // completes on the second pass.
+      setHideLow(false);
+      return;
+    }
+    // Recompute from the id whenever `shown` changes rather than storing a
+    // bare index, bo a refetch would otherwise leave the index pointing at
+    // the wrong card.
+    setFocusIdx(shown.findIndex((f) => f.id === targetFindingId));
+    const node = containerRef.current?.querySelector(`[data-finding-id="${targetFindingId}"]`);
+    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [targetFindingId, targetNonce, findings, shown]);
+
   return (
     <div>
       <div style={s.toolbar}>
@@ -54,21 +83,26 @@ export function FindingsPanel({
         </div>
       </div>
 
-      <div style={s.list}>
+      <div style={s.list} ref={containerRef}>
         {shown.length === 0 ? (
           <EmptyState icon="Filter" title={t("panel.noMatchTitle")} body={t("panel.noMatchBody")} />
         ) : (
           shown.map((f, i) => (
-            <FindingCard
-              key={f.id}
-              f={f}
-              focused={i === focusIdx}
-              defaultExpanded={i === 0}
-              pending={action.isPending}
-              repoFullName={repoFullName}
-              headSha={headSha}
-              onAction={(act) => action.mutate({ findingId: f.id, action: act, prId })}
-            />
+            // scrollMarginTop lives here rather than on FindingCard itself
+            // (which stays unmodified) — same reasoning as
+            // ReviewRunAccordion's own scrollMarginTop: the smooth scroll
+            // must not tuck the card under the sticky header.
+            <div key={f.id} style={s.listItem}>
+              <FindingCard
+                f={f}
+                focused={i === focusIdx}
+                defaultExpanded={i === 0 || f.id === targetFindingId}
+                pending={action.isPending}
+                repoFullName={repoFullName}
+                headSha={headSha}
+                onAction={(act) => action.mutate({ findingId: f.id, action: act, prId })}
+              />
+            </div>
           ))
         )}
       </div>

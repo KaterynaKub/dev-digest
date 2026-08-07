@@ -59,6 +59,7 @@ export default function PRDetailPage() {
 
   const tab = search.get("tab") ?? "overview";
   const traceRunId = search.get("trace");
+  const targetFindingId = search.get("finding");
   const setParam = (key: string, val: string | null) => {
     const sp = new URLSearchParams(search.toString());
     if (val == null) sp.delete(key);
@@ -66,6 +67,24 @@ export default function PRDetailPage() {
     router.replace(`/repos/${repoId}/pulls/${number}${sp.toString() ? `?${sp.toString()}` : ""}`);
   };
   const setTab = (t: string) => setParam("tab", t);
+
+  const [findingNonce, setFindingNonce] = React.useState(0);
+  /** Jump to a finding's card in the Findings tab. Sets ?tab and ?finding in
+   *  ONE replace — two setParam calls would race on the captured `search`. */
+  const goToFinding = React.useCallback(
+    (findingId: string) => {
+      const sp = new URLSearchParams(search.toString());
+      sp.set("tab", "findings");
+      sp.set("finding", findingId);
+      router.replace(`/repos/${repoId}/pulls/${number}?${sp.toString()}`);
+      // Clicking the same badge twice produces an identical URL — no param
+      // change, no re-render — but the reviewer who scrolled away still
+      // expects to be brought back. Deliberately NOT in the URL: a nonce is
+      // not part of what a shared link carries.
+      setFindingNonce((n) => n + 1);
+    },
+    [search, router, repoId, number],
+  );
 
   // Reviews come newest-first; each is its own run (grouped into accordions).
   const runs = reviews ?? [];
@@ -157,6 +176,9 @@ export default function PRDetailPage() {
               invalidateRunHistory();
               refetchReviews();
             }}
+            targetFindingId={targetFindingId}
+            targetFindingNonce={findingNonce}
+            onFindingNotFound={() => setParam("finding", null)}
           />
         )}
 
@@ -166,6 +188,7 @@ export default function PRDetailPage() {
             filesCount={pr.files_count}
             files={pr.files}
             canComment={pr.status === "open"}
+            onGoToFinding={goToFinding}
           />
         )}
       </div>

@@ -26,6 +26,15 @@ interface FindingsTabProps {
   onOpenTrace: (id: string) => void;
   onDelete: (id: string) => void;
   onRunDone: () => void;
+  /** A finding to focus/scroll to (e.g. from a Smart Diff mark click). */
+  targetFindingId?: string | null;
+  /** Bumped by the caller to re-trigger the scroll on a repeat click. */
+  targetFindingNonce?: number;
+  /** Called when `targetFindingId` is set but no run in `runs` contains it,
+   *  so the caller can clear the stale `?finding=` param. Does not render an
+   *  error — the reviewer is already on the findings list, a reasonable
+   *  place to be. */
+  onFindingNotFound?: (id: string) => void;
 }
 
 export function FindingsTab({
@@ -42,6 +51,9 @@ export function FindingsTab({
   onOpenTrace,
   onDelete,
   onRunDone,
+  targetFindingId = null,
+  targetFindingNonce = 0,
+  onFindingNotFound,
 }: FindingsTabProps) {
   // A ReviewRecord carries no cost — the figure lives on the agent run that
   // produced it, which we already hold. Index the runs so each accordion can be
@@ -73,13 +85,33 @@ export function FindingsTab({
     [onDelete],
   );
 
-  // Timeline → Review-runs navigation: clicking an agent name in the timeline
-  // opens + scrolls to that run's accordion below. The nonce re-triggers the
-  // scroll even when the same run is clicked twice.
-  const [target, setTarget] = React.useState<{ runId: string; n: number } | null>(null);
+  // Review-runs navigation: opens + scrolls to a run's accordion below.
+  // Two drivers set this state: the Timeline (clicking an agent name — by run
+  // id) and a Smart Diff mark click forwarded from the page (by finding id,
+  // via the effect below). The nonce re-triggers the scroll even when the
+  // same target is clicked twice.
+  const [target, setTarget] = React.useState<{
+    runId: string | null;
+    findingId: string | null;
+    n: number;
+  } | null>(null);
   const handleGoToReview = useCallback((runId: string) => {
-    setTarget((p) => ({ runId, n: (p?.n ?? 0) + 1 }));
+    setTarget((p) => ({ runId, findingId: null, n: (p?.n ?? 0) + 1 }));
   }, []);
+
+  // Smart Diff → Review-runs navigation: keyed on both id and nonce so a
+  // repeat click on the same badge re-fires even though `targetFindingId`
+  // itself would not have changed.
+  React.useEffect(() => {
+    if (!targetFindingId) return;
+    setTarget({ runId: null, findingId: targetFindingId, n: targetFindingNonce });
+  }, [targetFindingId, targetFindingNonce]);
+
+  React.useEffect(() => {
+    if (!targetFindingId) return;
+    const found = runs.some((review) => review.findings.some((f) => f.id === targetFindingId));
+    if (!found) onFindingNotFound?.(targetFindingId);
+  }, [targetFindingId, runs, onFindingNotFound]);
 
   // Per-run findings for the timeline's severity chips. Joined from the reviews
   // we already hold (review.run_id ↔ run.run_id), so the timeline needs no
@@ -193,6 +225,7 @@ export function FindingsTab({
             costUsd={review.run_id ? runById.get(review.run_id)?.cost_usd ?? null : null}
             costSource={review.run_id ? runById.get(review.run_id)?.cost_source ?? null : null}
             targetRunId={target?.runId ?? null}
+            targetFindingId={target?.findingId ?? null}
             targetNonce={target?.n ?? 0}
           />
         ))
