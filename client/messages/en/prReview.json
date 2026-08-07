@@ -79,14 +79,34 @@
     "SUGGESTION": "suggestion"
   },
   "smartDiff": {
+    "title": "REVIEWER-ORDERED DIFF",
+    "smartOrder": "Smart order",
+    "originalOrder": "Original order",
+    "stats": "{files} files · <add>+{additions}</add> <del>-{deletions}</del>",
     "coreLabel": "Core",
     "wiringLabel": "Wiring",
     "boilerplateLabel": "Boilerplate",
+    "coreCaption": "The substance of the change — review closely",
+    "wiringCaption": "Hooks the core into the app",
+    "boilerplateCaption": "Generated / mechanical — skim",
+    "findingsBadge": "{count} findings",
+    "largeBadge": "Large",
+    "emptyGroup": "No files in this group.",
+    "loading": "Loading the reviewer-ordered diff…",
+    "error": "Couldn't load the reviewer-ordered diff.",
+    "empty": "No files to show.",
+    "severityLabel": {
+      "CRITICAL": "blocker",
+      "WARNING": "warning",
+      "SUGGESTION": "suggestion"
+    },
     "largeTitle": "This PR is large ({lines} changed lines)",
     "largeBody": "Consider splitting it into smaller, focused PRs for easier review:",
     "filesCount": "{count} files",
     "findingLines": "{count} finding-lines",
-    "groupedByRole": "Smart Diff · grouped by role"
+    "groupedByRole": "Smart Diff · grouped by role",
+    "goToFinding": "Go to this {severity} finding",
+    "tooltipUnavailable": "Open the Findings tab for this finding's details."
   },
   "list": {
     "breadcrumb": "Pull Requests",

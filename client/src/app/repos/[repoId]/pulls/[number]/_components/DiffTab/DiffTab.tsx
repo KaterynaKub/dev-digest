@@ -3,9 +3,10 @@
 import React from "react";
 import { SectionLabel, Button } from "@devdigest/ui";
 import { DiffViewer, type DiffCommentApi } from "@/components/diff-viewer";
+import { SmartDiffSection } from "../SmartDiffSection";
 import { usePrComments, useCreatePrComment } from "@/lib/hooks/reviews";
 import { notify } from "@/lib/toast";
-import type { PrFile } from "@devdigest/shared";
+import type { FindingRecord, PrFile } from "@devdigest/shared";
 
 interface DiffTabProps {
   prId: string | null;
@@ -13,13 +14,24 @@ interface DiffTabProps {
   files: PrFile[];
   /** Inline commenting is offered only on open PRs (GitHub rejects otherwise). */
   canComment?: boolean;
+  /** Forwarded to SmartDiffSection untouched — widens its per-line finding marks
+   *  into whole-block highlights and fills the mark tooltips. */
+  findings?: FindingRecord[];
+  /** Forwarded to SmartDiffSection untouched — navigates a mark badge click to
+   *  that finding's card in the Findings tab. */
+  onGoToFinding?: (findingId: string) => void;
 }
 
-export function DiffTab({ prId, filesCount, files, canComment }: DiffTabProps) {
+export function DiffTab({ prId, filesCount, files, canComment, findings, onGoToFinding }: DiffTabProps) {
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
   // Comments start hidden so the diff is clean by default — toggle to reveal.
   const [showComments, setShowComments] = React.useState(false);
+  // DiffTab owns which ordering is shown: SmartDiffSection renders the
+  // reviewer-ordered groups; "original" falls back to today's plain DiffViewer
+  // (which alone carries inline commenting — SmartDiffSection deliberately
+  // does not reimplement it).
+  const [order, setOrder] = React.useState<"smart" | "original">("smart");
 
   const commentCount = comments?.length ?? 0;
 
@@ -42,24 +54,37 @@ export function DiffTab({ prId, filesCount, files, canComment }: DiffTabProps) {
 
   return (
     <section>
-      <SectionLabel
-        icon="Code"
-        right={
-          commentCount > 0 ? (
-            <Button
-              kind="ghost"
-              size="sm"
-              icon={showComments ? "EyeOff" : "Eye"}
-              onClick={() => setShowComments((v) => !v)}
-            >
-              {showComments ? "Hide comments" : "Show comments"} ({commentCount})
-            </Button>
-          ) : undefined
-        }
-      >
-        Files changed · {filesCount} files
-      </SectionLabel>
-      <DiffViewer files={files} commenting={commenting} />
+      <SmartDiffSection
+        prId={prId}
+        files={files}
+        order={order}
+        onOrderChange={setOrder}
+        findings={findings}
+        onGoToFinding={onGoToFinding}
+      />
+
+      {order === "original" && (
+        <>
+          <SectionLabel
+            icon="Code"
+            right={
+              commentCount > 0 ? (
+                <Button
+                  kind="ghost"
+                  size="sm"
+                  icon={showComments ? "EyeOff" : "Eye"}
+                  onClick={() => setShowComments((v) => !v)}
+                >
+                  {showComments ? "Hide comments" : "Show comments"} ({commentCount})
+                </Button>
+              ) : undefined
+            }
+          >
+            Files changed · {filesCount} files
+          </SectionLabel>
+          <DiffViewer files={files} commenting={commenting} />
+        </>
+      )}
     </section>
   );
 }

@@ -14,6 +14,7 @@ import type {
   ReviewRunResponse,
   RunEvent,
   RunSummary,
+  SmartDiff,
 } from "@devdigest/shared";
 
 // ---- Active (in-flight) runs — server-side source of truth ----
@@ -132,6 +133,9 @@ export function useRunReview() {
       }),
     onSuccess: (_d, { prId }) => {
       qc.invalidateQueries({ queryKey: ["reviews", prId] });
+      // A finished review changes which lines are marked in the smart diff —
+      // without this it keeps showing the previous run's marks until reload.
+      qc.invalidateQueries({ queryKey: ["smart-diff", prId] });
     },
   });
 }
@@ -152,6 +156,17 @@ export function useDeriveIntent(prId: string | null | undefined) {
   return useMutation({
     mutationFn: () => api.post<PrIntentRecord>(`/pulls/${prId}/intent/derive`, { force: true }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pr-intent", prId] }),
+  });
+}
+
+// ---- Smart Diff (reviewer-ordered diff) ----
+/** Deterministic reviewer-ordered diff. Pure server computation — no model
+ *  call, nothing persisted, so it is safe to refetch freely. */
+export function useSmartDiff(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["smart-diff", prId],
+    queryFn: () => api.get<SmartDiff>(`/pulls/${prId}/smart-diff`),
+    enabled: !!prId,
   });
 }
 
