@@ -105,7 +105,8 @@
     "filesCount": "{count} files",
     "findingLines": "{count} finding-lines",
     "groupedByRole": "Smart Diff · grouped by role",
-    "goToFinding": "Go to this {severity} finding"
+    "goToFinding": "Go to this {severity} finding",
+    "tooltipUnavailable": "Open the Findings tab for this finding's details."
   },
   "list": {
     "breadcrumb": "Pull Requests",

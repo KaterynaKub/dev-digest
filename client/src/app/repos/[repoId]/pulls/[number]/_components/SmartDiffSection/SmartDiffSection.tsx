@@ -1,9 +1,10 @@
 /* SmartDiffSection — "REVIEWER-ORDERED DIFF": groups the PR's files into
    core/wiring/boilerplate (server-derived, deterministic, no model call) and
-   overlays per-line severity marks from past reviews. A Smart/Original order
-   toggle lets the reviewer flip back to the plain file list (DiffTab keeps the
-   original DiffViewer path — this section never replaces it, only adds one
-   above it).
+   overlays severity highlights from past reviews. A Smart/Original order
+   toggle lets the reviewer flip back to the plain file list: in "original" the
+   section collapses to its header + stats + toggle (the grouped view is NOT
+   rendered) and DiffTab renders the plain DiffViewer below instead. The toggle
+   itself stays mounted in both modes — it is the only way back to "smart".
 
    Deliberate omissions (do not "restore" on a future read):
    - `pseudocode_summary` is never rendered (no "What this does" block, no
@@ -12,6 +13,14 @@
    - Navigating from a mark to its finding's card (spec 0005c) wraps the badge
      in a button ONLY when `onGoToFinding` is supplied, so this component stays
      renderable without a navigation host.
+
+   Finding highlights span the whole BLOCK (`start_line`..`end_line`), not just
+   the marked line. `SmartDiffFindingMark` carries only `line`, so the span comes
+   from the PR's `FindingRecord`s joined by `finding_id` on the client (`findings`
+   prop) — see helpers.ts for why that join lives here and not in the contract.
+   Overlapping blocks are resolved there too: worst severity wins the resting
+   tint, every block badges once at its own start, and HOVER follows the
+   latest-starting (innermost) block rather than the worst one.
 
    Reuse note: `parsePatch`/`type Line` and `lineRowFor`/`lineSignFor` are
    imported directly from `@/components/diff-viewer/helpers` and
@@ -29,8 +38,30 @@ import { Badge, Icon, SectionLabel, Skeleton } from "@devdigest/ui";
 import { parsePatch, type Line } from "@/components/diff-viewer/helpers";
 import { lineRowFor, lineSignFor } from "@/components/diff-viewer/styles";
 import { useSmartDiff } from "@/lib/hooks/reviews";
-import type { PrFile, SmartDiffFile, SmartDiffFindingMark, SmartDiffRole, Severity } from "@devdigest/shared";
-import { GROUP_DEFAULT_OPEN, GROUP_ORDER, ROLE_COLOR, SEVERITY_BG, SEVERITY_COLOR } from "./constants";
+import type {
+  FindingRecord,
+  PrFile,
+  SmartDiffFile,
+  SmartDiffFindingMark,
+  SmartDiffRole,
+  Severity,
+} from "@devdigest/shared";
+import {
+  GROUP_DEFAULT_OPEN,
+  GROUP_ORDER,
+  ROLE_COLOR,
+  SEVERITY_BG,
+  SEVERITY_COLOR,
+  SEVERITY_ROW_BG,
+  SEVERITY_ROW_BG_HOVER,
+} from "./constants";
+import {
+  buildLineCoverage,
+  resolveFindingBlocks,
+  type FindingBlock,
+  type LineCoverage,
+} from "./helpers";
+import { FindingTooltip } from "./FindingTooltip";
 import { chevronFor, s } from "./styles";
 
 export interface SmartDiffSectionProps {
@@ -38,6 +69,11 @@ export interface SmartDiffSectionProps {
   files: PrFile[];
   order: "smart" | "original";
   onOrderChange: (order: "smart" | "original") => void;
+  /** The PR's persisted findings, used to widen each `finding_marks` entry into
+   *  its full `start_line`..`end_line` block and to fill the badge tooltip.
+   *  Optional: without them every mark degrades to the single-line highlight
+   *  this component shipped with, and tooltips fall back to a muted line. */
+  findings?: FindingRecord[];
   /** Navigates to a finding's card in the Findings tab. When omitted, mark
    *  badges render as plain non-interactive badges (see header comment). */
   onGoToFinding?: (findingId: string) => void;
@@ -55,9 +91,25 @@ const GROUP_CAPTION_KEY: Record<SmartDiffRole, string> = {
   boilerplate: "smartDiff.boilerplateCaption",
 };
 
-export function SmartDiffSection({ prId, files, order, onOrderChange, onGoToFinding }: SmartDiffSectionProps) {
+export function SmartDiffSection({
+  prId,
+  files,
+  order,
+  onOrderChange,
+  findings,
+  onGoToFinding,
+}: SmartDiffSectionProps) {
   const t = useTranslations("prReview");
   const { data, isLoading, isError } = useSmartDiff(prId);
+  const isSmart = order === "smart";
+
+  // Marks reference findings by id; this is the join side. Built once per
+  // findings change rather than per file card.
+  const findingsById = React.useMemo(() => {
+    const map = new Map<string, FindingRecord>();
+    for (const f of findings ?? []) map.set(f.id, f);
+    return map;
+  }, [findings]);
 
   // Group-level expansion is computed once, in the useState initialiser —
   // never synced later in an effect. (File-level expansion is likewise a
@@ -116,7 +168,11 @@ export function SmartDiffSection({ prId, files, order, onOrderChange, onGoToFind
         </div>
       </div>
 
-      {isLoading && (
+      {/* Everything below the toggle is the reviewer-ordered view itself — it
+          renders only in "smart" mode. In "original" mode this section keeps
+          just its header, stats and the toggle, and DiffTab renders the plain
+          DiffViewer below instead. */}
+      {isSmart && isLoading && (
         <div>
           <div role="status" aria-live="polite" style={{ marginBottom: 8, fontSize: 12, color: "var(--text-muted)" }}>
             {t("smartDiff.loading")}
@@ -125,9 +181,11 @@ export function SmartDiffSection({ prId, files, order, onOrderChange, onGoToFind
         </div>
       )}
 
-      {isError && <div style={{ fontSize: 13, color: "var(--crit)", marginBottom: 12 }}>{t("smartDiff.error")}</div>}
+      {isSmart && isError && (
+        <div style={{ fontSize: 13, color: "var(--crit)", marginBottom: 12 }}>{t("smartDiff.error")}</div>
+      )}
 
-      {!isLoading && !isError && data && (
+      {isSmart && !isLoading && !isError && data && (
         <>
           {data.split_suggestion.too_big && (
             <div style={s.splitCallout}>
@@ -183,6 +241,7 @@ export function SmartDiffSection({ prId, files, order, onOrderChange, onGoToFind
                         key={sdFile.path}
                         sdFile={sdFile}
                         file={filesByPath.get(sdFile.path) ?? null}
+                        findingsById={findingsById}
                         t={t}
                         onGoToFinding={onGoToFinding}
                       />
@@ -199,11 +258,13 @@ export function SmartDiffSection({ prId, files, order, onOrderChange, onGoToFind
 function SmartDiffFileCard({
   sdFile,
   file,
+  findingsById,
   t,
   onGoToFinding,
 }: {
   sdFile: SmartDiffFile;
   file: PrFile | null;
+  findingsById: Map<string, FindingRecord>;
   t: ReturnType<typeof useTranslations>;
   onGoToFinding?: (findingId: string) => void;
 }) {
@@ -214,14 +275,20 @@ function SmartDiffFileCard({
 
   const isLarge = !!sdFile.is_large;
   const findingCount = sdFile.finding_count ?? 0;
-  const marksByLine = React.useMemo(() => {
-    const map = new Map<number, SmartDiffFindingMark>();
-    for (const mark of sdFile.finding_marks ?? []) map.set(mark.line, mark);
-    return map;
-  }, [sdFile.finding_marks]);
+  // Marks carry only a start line; the joined findings supply each block's
+  // `end_line`, so coverage spans the whole block and resolves overlaps.
+  const coverageByLine = React.useMemo(
+    () => buildLineCoverage(resolveFindingBlocks(sdFile.finding_marks ?? [], findingsById)),
+    [sdFile.finding_marks, findingsById],
+  );
 
   const worstSeverity = worstSeverityOf(sdFile.finding_marks ?? []);
   const lines = file ? parsePatch(file.patch) : [];
+
+  // Hover lives HERE, not in the row: hovering one finding has to light up every
+  // row of that finding, which no single row can know on its own. The file card
+  // holds the hovered finding_id and each row asks whether it is covered by it.
+  const [hoveredFindingId, setHoveredFindingId] = React.useState<string | null>(null);
 
   return (
     <div style={s.fileCard(isLarge)}>
@@ -267,7 +334,9 @@ function SmartDiffFileCard({
                 key={i}
                 ln={ln}
                 path={sdFile.path}
-                mark={ln.newNo != null ? marksByLine.get(ln.newNo) : undefined}
+                coverage={ln.newNo != null ? coverageByLine.get(ln.newNo) : undefined}
+                hoveredFindingId={hoveredFindingId}
+                onHoverFinding={setHoveredFindingId}
                 t={t}
                 onGoToFinding={onGoToFinding}
               />
@@ -281,13 +350,19 @@ function SmartDiffFileCard({
 function SmartDiffLine({
   ln,
   path,
-  mark,
+  coverage,
+  hoveredFindingId,
+  onHoverFinding,
   t,
   onGoToFinding,
 }: {
   ln: Line;
   path: string;
-  mark?: SmartDiffFindingMark;
+  /** Findings covering this row (worst severity + blocks starting here). */
+  coverage?: LineCoverage;
+  /** The finding currently hovered anywhere in this file card, or null. */
+  hoveredFindingId: string | null;
+  onHoverFinding: (findingId: string | null) => void;
   t: ReturnType<typeof useTranslations>;
   onGoToFinding?: (findingId: string) => void;
 }) {
@@ -299,12 +374,71 @@ function SmartDiffLine({
     );
   }
 
-  const rowStyle = mark
-    ? { ...lineRowFor(ln.kind), ...s.markLineExtra(SEVERITY_COLOR[mark.severity]) }
-    : lineRowFor(ln.kind);
+  // Hover is state, not CSS: these rows are styled with inline `style` objects
+  // (no CSS module / styled-component in this tree), and inline styles cannot
+  // express `:hover`. It is also not a per-row boolean — hovering one row of a
+  // finding must light up ALL of that finding's rows, so the hovered finding id
+  // is owned by the file card and every row derives its own state from it.
+  const hoveredBlock = coverage?.blocks.find((b) => b.finding_id === hoveredFindingId);
+  const isHovered = hoveredBlock != null;
 
+  // When a hovered block overlaps a worse one, the hover tint follows the
+  // HOVERED finding, not the row's worst severity — otherwise hovering the
+  // nested WARNING would light up in the enclosing CRITICAL's red and the
+  // reviewer could not tell which finding they are actually tracing.
+  const tintSeverity = hoveredBlock?.severity ?? coverage?.severity;
+  // Edges are drawn for the hovered block alone while hovering (its exact span
+  // is the question being asked); otherwise for whatever block boundaries the
+  // row genuinely carries.
+  const edges = hoveredBlock
+    ? {
+        isBlockStart: ln.newNo === hoveredBlock.startLine,
+        isBlockEnd: ln.newNo === hoveredBlock.endLine,
+      }
+    : {
+        isBlockStart: (coverage?.startsHere.length ?? 0) > 0,
+        isBlockEnd: !!coverage?.isBlockEnd,
+      };
+
+  // A tooltip opens inside THIS row's badge slot, and every covered row is
+  // `position: relative` — so without lifting the row, the rows below it (later
+  // in the DOM, same painting layer) draw over the tooltip and their badges show
+  // through it. Lifting only the row that owns the open tooltip keeps the rest
+  // of the diff in the default layer.
+  const ownsOpenTooltip = coverage?.startsHere.some((b) => b.finding_id === hoveredFindingId) ?? false;
+
+  const rowStyle =
+    coverage && tintSeverity
+      ? {
+          ...lineRowFor(ln.kind),
+          ...s.markLineExtra(
+            SEVERITY_COLOR[coverage.severity],
+            (isHovered ? SEVERITY_ROW_BG_HOVER : SEVERITY_ROW_BG)[tintSeverity],
+            SEVERITY_ROW_BG_HOVER[tintSeverity],
+            edges,
+          ),
+          ...(ownsOpenTooltip ? s.rowWithOpenTooltip : null),
+        }
+      : lineRowFor(ln.kind);
+
+  // Hovering anywhere on a covered row traces the row's INNERMOST finding — the
+  // one that starts latest. Where blocks overlap that is the more specific claim
+  // about this row, and the one hardest to reach by pointer (its badge sits on
+  // its own first row, possibly far above). Note this is deliberately NOT the
+  // row's worst severity, so hovering a nested SUGGESTION inside a CRITICAL
+  // traces the suggestion — and the tint follows suit via `tintSeverity`.
+  const rowFinding = coverage?.innermost.finding_id;
+
+  // The row keeps its `sd-<path>-<line>` id on every covered row, not just a
+  // block's first: `goToFinding` scrolls to a finding's start_line, and a
+  // continuation row is a legitimate anchor for a finding that starts above.
   return (
-    <div id={mark ? `sd-${path}-${ln.newNo}` : undefined} style={rowStyle}>
+    <div
+      id={coverage ? `sd-${path}-${ln.newNo}` : undefined}
+      style={rowStyle}
+      onMouseEnter={rowFinding ? () => onHoverFinding(rowFinding) : undefined}
+      onMouseLeave={rowFinding ? () => onHoverFinding(null) : undefined}
+    >
       <span style={s.lineNo} className="mono tnum">
         {ln.newNo ?? ln.oldNo ?? ""}
       </span>
@@ -312,37 +446,112 @@ function SmartDiffLine({
       <span style={s.lineText} className="mono">
         {ln.text}
       </span>
-      {mark && (
-        <span style={{ padding: "2px 12px", flexShrink: 0 }}>
-          {onGoToFinding ? (
-            <button
-              type="button"
-              onClick={() => onGoToFinding(mark.finding_id)}
-              aria-label={t("smartDiff.goToFinding", {
-                severity: t(`smartDiff.severityLabel.${mark.severity}`),
-              })}
-              style={s.markButton}
-            >
-              <Badge
-                color={SEVERITY_COLOR[mark.severity]}
-                bg={SEVERITY_BG[mark.severity]}
-                icon={mark.severity === "SUGGESTION" ? "Lightbulb" : undefined}
-              >
-                {t(`smartDiff.severityLabel.${mark.severity}`)}
-              </Badge>
-            </button>
-          ) : (
-            <Badge
-              color={SEVERITY_COLOR[mark.severity]}
-              bg={SEVERITY_BG[mark.severity]}
-              icon={mark.severity === "SUGGESTION" ? "Lightbulb" : undefined}
-            >
-              {t(`smartDiff.severityLabel.${mark.severity}`)}
-            </Badge>
-          )}
+      {/* One badge per block STARTING here — a continuation row shows none, so a
+          20-line finding is one tinted stripe with a single badge at its top.
+          Overlapping blocks each badge on their own first row. */}
+      {coverage && coverage.startsHere.length > 0 && (
+        <span style={s.markBadgeSlot}>
+          {coverage.startsHere.map((block) => (
+            <MarkBadge
+              key={block.finding_id}
+              block={block}
+              onHoverFinding={onHoverFinding}
+              rowFindingId={rowFinding}
+              t={t}
+              onGoToFinding={onGoToFinding}
+            />
+          ))}
         </span>
       )}
     </div>
+  );
+}
+
+/** Severity badge for one finding block, with a hover tooltip carrying the
+ *  finding's title + rationale. Absolutely positioned by `markBadgeSlot`, so it
+ *  never contributes to the diff row's height. */
+function MarkBadge({
+  block,
+  onHoverFinding,
+  rowFindingId,
+  t,
+  onGoToFinding,
+}: {
+  block: FindingBlock;
+  onHoverFinding: (findingId: string | null) => void;
+  /** The finding the badge's own row traces — restored when the pointer leaves
+   *  the badge but is still inside that row. */
+  rowFindingId?: string;
+  t: ReturnType<typeof useTranslations>;
+  onGoToFinding?: (findingId: string) => void;
+}) {
+  // The tooltip is `position: fixed`, so it needs the badge's viewport rect.
+  // Captured on enter rather than measured in the tooltip: the badge is the
+  // anchor, and reading its rect here keeps the tooltip a pure renderer.
+  const [anchor, setAnchor] = React.useState<DOMRect | null>(null);
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const tooltipId = React.useId();
+
+  // Hovering the badge does two things at once: opens the tooltip AND claims the
+  // file-card-wide hover for THIS finding, so every row of this block lights up
+  // even when the row underneath the pointer belongs to a worse, enclosing one.
+  const show = () => {
+    setAnchor(ref.current?.getBoundingClientRect() ?? null);
+    onHoverFinding(block.finding_id);
+  };
+  // Leaving the badge closes the tooltip but hands the hover back to the row the
+  // badge sits on, rather than clearing it: the pointer is still inside that row,
+  // and clearing here would drop the highlight while the cursor has not left it.
+  const hide = () => {
+    setAnchor(null);
+    onHoverFinding(rowFindingId ?? null);
+  };
+
+  const severityLabel = t(`smartDiff.severityLabel.${block.severity}`);
+  const badge = (
+    <Badge
+      color={SEVERITY_COLOR[block.severity]}
+      bg={SEVERITY_BG[block.severity]}
+      icon={block.severity === "SUGGESTION" ? "Lightbulb" : undefined}
+      style={s.markBadgeCompact}
+    >
+      {severityLabel}
+    </Badge>
+  );
+
+  return (
+    <span
+      ref={ref}
+      style={s.markBadgeWrap}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      // Keyboard parity: the tooltip follows focus too, not just the pointer.
+      onFocus={show}
+      onBlur={hide}
+    >
+      {onGoToFinding ? (
+        <button
+          type="button"
+          onClick={() => onGoToFinding(block.finding_id)}
+          aria-label={t("smartDiff.goToFinding", { severity: severityLabel })}
+          aria-describedby={anchor ? tooltipId : undefined}
+          style={s.markButton}
+        >
+          {badge}
+        </button>
+      ) : (
+        badge
+      )}
+      {anchor && (
+        <FindingTooltip
+          title={block.title}
+          rationale={block.rationale}
+          fallback={t("smartDiff.tooltipUnavailable")}
+          anchor={anchor}
+          tooltipId={tooltipId}
+        />
+      )}
+    </span>
   );
 }
 

@@ -6,7 +6,7 @@ import { DiffViewer, type DiffCommentApi } from "@/components/diff-viewer";
 import { SmartDiffSection } from "../SmartDiffSection";
 import { usePrComments, useCreatePrComment } from "@/lib/hooks/reviews";
 import { notify } from "@/lib/toast";
-import type { PrFile } from "@devdigest/shared";
+import type { FindingRecord, PrFile } from "@devdigest/shared";
 
 interface DiffTabProps {
   prId: string | null;
@@ -14,12 +14,15 @@ interface DiffTabProps {
   files: PrFile[];
   /** Inline commenting is offered only on open PRs (GitHub rejects otherwise). */
   canComment?: boolean;
+  /** Forwarded to SmartDiffSection untouched — widens its per-line finding marks
+   *  into whole-block highlights and fills the mark tooltips. */
+  findings?: FindingRecord[];
   /** Forwarded to SmartDiffSection untouched — navigates a mark badge click to
    *  that finding's card in the Findings tab. */
   onGoToFinding?: (findingId: string) => void;
 }
 
-export function DiffTab({ prId, filesCount, files, canComment, onGoToFinding }: DiffTabProps) {
+export function DiffTab({ prId, filesCount, files, canComment, findings, onGoToFinding }: DiffTabProps) {
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
   // Comments start hidden so the diff is clean by default — toggle to reveal.
@@ -56,6 +59,7 @@ export function DiffTab({ prId, filesCount, files, canComment, onGoToFinding }: 
         files={files}
         order={order}
         onOrderChange={setOrder}
+        findings={findings}
         onGoToFinding={onGoToFinding}
       />
 
