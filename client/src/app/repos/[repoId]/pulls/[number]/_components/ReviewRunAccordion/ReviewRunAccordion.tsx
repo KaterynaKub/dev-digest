@@ -34,6 +34,7 @@ export function ReviewRunAccordion({
   costSource = null,
   targetRunId = null,
   targetNonce = 0,
+  targetFindingId = null,
 }: {
   review: ReviewRecord;
   prId: string;
@@ -44,19 +45,27 @@ export function ReviewRunAccordion({
    *  already holds the run rows — `ReviewRecord` itself carries no cost. */
   costUsd?: number | null;
   costSource?: CostSource | null;
-  /** When this matches review.run_id, the accordion opens and scrolls into view
-   *  (driven from the Timeline: clicking an agent name navigates here). */
+  /** When this matches review.run_id, the accordion opens and scrolls into
+   *  view. There are now two drivers of this: the Timeline (clicking an agent
+   *  name navigates here by run) and a Smart Diff mark click (navigates by
+   *  finding, see `targetFindingId`). */
   targetRunId?: string | null;
   targetNonce?: number;
+  /** Opens the accordion when `review.findings` contains this id, regardless
+   *  of `run_id` — `reviews.run_id` is nullable, so an older run whose
+   *  `run_id` is null can still be the one holding the target finding. */
+  targetFindingId?: string | null;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
-    if (review.run_id && review.run_id === targetRunId) {
+    const byRun = !!review.run_id && review.run_id === targetRunId;
+    const byFinding = !!targetFindingId && review.findings.some((f) => f.id === targetFindingId);
+    if (byRun || byFinding) {
       setOpen(true);
       rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [targetRunId, targetNonce, review.run_id]);
+  }, [targetRunId, targetNonce, targetFindingId, review.run_id, review.findings]);
   const del = useDeleteReview(prId);
   const findings = review.findings;
   const blockers = findings.filter((f) => f.severity === "CRITICAL" && !f.dismissed_at).length;
@@ -161,6 +170,8 @@ export function ReviewRunAccordion({
             prId={prId}
             repoFullName={repoFullName}
             headSha={headSha}
+            targetFindingId={targetFindingId}
+            targetNonce={targetNonce}
           />
         </div>
       )}

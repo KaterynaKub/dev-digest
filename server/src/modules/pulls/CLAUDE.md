@@ -15,6 +15,10 @@ Search `../../../docs/`, `../../../specs/`, `../../../INSIGHTS.md` first.
   them or persist the derived one.
 - Severity rollups are computed, not stored.
 - Helpers here stay pure (no DB, no `this`) so they unit-test without Docker.
+- Reviewer-ordered grouping (core/wiring/boilerplate + per-line finding marks)
+  lives in `../smart-diff/CLAUDE.md`, not here: `pulls` owns the raw file list
+  (`pr_files`, patches), `smart-diff` owns its ordering — neither writes the
+  other's rows.
 
 ## Use when
 

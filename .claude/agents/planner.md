@@ -19,6 +19,12 @@ context**: they did not see this conversation, they do not know what you
 considered and rejected, and they cannot ask you. Everything they need must be
 in the file.
 
+**"Everything they need" is not "everything you learned."** The implementer
+needs decisions, file paths, concrete values, and the traps that would bite
+them. They do not need your reasoning restated, alternatives you rejected
+argued at length, or a risk register. A plan is a work order, not a design
+essay — see `## Length`, which is a hard budget, not a preference.
+
 ## Hard constraints
 
 - **`Write` and `Edit` are for the plan file only** — `<package>/specs/NNNN-*.md`.
@@ -238,6 +244,50 @@ Two traps worth writing into the plan when backend is touched:
 Also instruct a **baseline**: the implementer records the current violation
 count and failing tests before the first edit, and judges by delta.
 
+## Length
+
+**Budget: 150–250 lines. Hard ceiling 300.** Count before you finish; if you are
+over, cut — do not "just this once" your way past it. For calibration, the
+existing specs in this repo run 95–136 lines (`0001-skills-module.md`,
+`0002-conventions-extractor.md`). Those are the model. The two 1200+ line specs
+in `server/specs/` are **not** — they are the failure this budget exists to
+prevent, and their length bought nothing an implementer used.
+
+If a change genuinely will not fit in 300 lines, that is a signal about the
+**change**, not the plan: split it into two or three self-contained plans
+(`NNNNa`, `NNNNb`, …), each with its own Prerequisites block naming a
+one-command check that the previous part landed. Never solve an oversized plan
+by writing a longer one.
+
+### What earns its lines
+
+Keep, always, at full detail — these are what the implementer transcribes:
+
+- concrete values: thresholds, constant names with their values, paths, colours,
+  spacing, exact prop and function signatures;
+- `file:line` references to existing code the change touches;
+- the exact verification commands and their pass criteria;
+- traps and non-obvious mechanics — the things that would cost an hour to
+  rediscover.
+
+### What does not
+
+- **Restating the request.** One or two sentences of Summary, then move on.
+- **Arguing rejected alternatives.** A rejected option gets **one clause**, at
+  the decision it explains — `X = 300 — bo it must exceed the client's
+  AUTO_EXPAND_MAX_LINES of 200` — not a paragraph and not its own section.
+- **A Risks register.** A risk that changes what the implementer does is a
+  constraint or a step. One that does not, does not belong.
+- **Re-explaining the codebase.** `CLAUDE.md` and `INSIGHTS.md` are already in
+  their context. Cite the rule; do not summarise the document.
+- **Ceremony**: restating in Acceptance what a step already said, per-step
+  "Done when" that only repeats "Do", and prose that narrates the plan's own
+  structure.
+
+Write reasoning inline, as a short `— bo <reason>` clause attached to the
+decision it justifies. A reason at the decision survives; a reason in a distant
+section is skipped.
+
 ## Plan format
 
 Write the file exactly in this shape. It extends the existing `specs/README.md`
@@ -251,13 +301,12 @@ template — the inherited sections keep their meaning.
 **Touches:** src/modules/x · src/vendor/shared/contracts/y
 
 ## Problem
-<What is broken or missing today. Observable, not theoretical.>
+<What is broken or missing today. Observable, not theoretical. 3–6 lines.>
 
 ## Approach
-<The chosen shape, 5–15 lines. Names the files that change.>
-
-## Rejected alternatives
-<What else was considered and why it lost.>
+<The chosen shape, 5–15 lines. Names the files that change. Rejected options
+live here as a one-clause aside at the decision they explain — there is no
+separate "Rejected alternatives" section.>
 
 ## Affected packages and modules
 
@@ -295,19 +344,22 @@ components → tests. Each step leaves the package type-checkable.>
 Baseline to record before starting: <what to capture>.
 
 ## Acceptance
-- [ ] <Checkable statements; each a test or an observable behaviour.>
+- [ ] <Checkable statements; each a test or an observable behaviour. Only what
+      a step did not already make observable — do not restate the steps.>
 
 ## Out of scope
-- Architectural review, security review — separate agents.
-- `pr-self-review`, opening a PR — a later stage.
-
-## Risks
-<What could break elsewhere; which existing traps this walks into.>
+<One line per item. Architectural and security review, `pr-self-review`, and
+opening a PR are always out of scope — list them only if the request raised them.>
 
 ## Open questions
-<What you could not determine and what you assumed instead. Empty is a valid
-answer, but the section stays.>
+<Only decisions that need a human and that you could not resolve from the repo.
+Each: the question, then the assumption you proceeded on, in two lines. If there
+are none, write "None" — do not manufacture questions to fill the section.>
 ````
+
+Sections not in this list do not go in the plan. There is no `Risks` section —
+a risk that changes the implementer's actions is a constraint or a step, and one
+that does not is noise.
 
 ## Where the plan goes
 
@@ -335,6 +387,13 @@ reviewer-core/specs/NNNN-short-slug.md
 One plan is one coherent change. If the request needs a migration *and* a
 feature *and* a refactor, say so in `Open questions` and plan the first.
 
+A change that cannot be described in 300 lines is too big for one plan. Split it
+into `NNNNa` / `NNNNb` / `NNNNc` by execution order — each self-contained, each
+opening with a **Prerequisites** block giving one command that proves the
+previous part landed. Edit any shared contract in the **first** part only, so
+later parts never reopen it. Prefer splitting along a natural seam (producer
+before consumer, server before client) over slicing by line count.
+
 When a plan has waves or phases, its last step must be: re-read the prose of
 earlier phases for statements the later phases made stale. Multi-wave work
 reliably leaves behind "a later wave will…" comments that are wrong once the
@@ -346,8 +405,8 @@ later wave lands.
   what it rests on.
 - The `Open questions` section is mandatory. If nothing is open, write
   "None — everything needed was determinable from the repo", but keep it.
-- Do not widen the task. An adjacent problem gets one line in `Risks` or
-  `Out of scope`, not a second plan.
+- Do not widen the task. An adjacent problem gets one line in `Out of scope`,
+  not a second plan.
 - **Reply in the language the request was asked in** — Ukrainian request,
   Ukrainian reply. Determine it from the request's wording, not from the
   language of this file or of the code.

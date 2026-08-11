@@ -195,3 +195,22 @@ made Step 4c of `specs/0004-intent-layer.md` work — the spec's open question
 about whether the hook "behaves as assumed under connection reuse" is resolved
 for the single-request path; connection-pooling reuse across multiple requests
 to the same host was not separately exercised.
+
+## Trap: `LocalNoAuthProvider` always resolves the SEEDED default workspace by name, not any workspace row you insert directly
+
+**Found:** 2026-08-06 · **Applies to:** src/adapters/auth/local.ts, test/*.it.test.ts
+
+`currentWorkspace()` looks up `t.workspaces` by `eq(name, DEFAULT_WORKSPACE_NAME)`
+('default') and throws `'No default workspace found — run pnpm db:seed.'` if
+missing — it does NOT return "the first workspace" or anything based on the
+request. An `*.it.test.ts` that skips `seed()` and inserts its own `workspaces`
+row directly builds a fixture `buildApp()` can never reach: every request
+resolves to a workspace the test never created, so a "PR in another workspace
+→ 404" case that inserts one custom workspace against a bare DB actually
+returns 404 for EVERY pull id, including the one meant to succeed — a false
+green if the "happy path" assertion is weak. The fix used by
+`conventions.it.test.ts` and now `smart-diff.it.test.ts`: always call
+`await seed(db)` first, read back the seeded repo/workspace id via
+`eq(t.repos.fullName, 'acme/payments-api')`, and hang every fixture PR off
+THAT workspace; a genuine second workspace (for a foreign-PR 404 test) is an
+ADDITIONAL row inserted after seeding, never a replacement for it.
