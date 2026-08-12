@@ -34,6 +34,36 @@ export async function getPrFiles(
 }
 
 /**
+ * Resolve a PR by its GitHub-visible `owner/name` + PR number (as opposed to
+ * `getPull`, which takes the internal `pr_id`). Joins `pull_requests` × `repos`
+ * on `repos.fullName` — MCP tools receive `repo`/`pr` from the model, never an
+ * internal id. Workspace-scoped via `pull_requests.workspace_id`.
+ */
+export async function findPullByNumber(
+  db: Db,
+  workspaceId: string,
+  fullName: string,
+  number: number,
+): Promise<{ prId: string; repoId: string; headSha: string } | undefined> {
+  const [row] = await db
+    .select({
+      prId: t.pullRequests.id,
+      repoId: t.pullRequests.repoId,
+      headSha: t.pullRequests.headSha,
+    })
+    .from(t.pullRequests)
+    .innerJoin(t.repos, eq(t.pullRequests.repoId, t.repos.id))
+    .where(
+      and(
+        eq(t.pullRequests.workspaceId, workspaceId),
+        eq(t.repos.fullName, fullName),
+        eq(t.pullRequests.number, number),
+      ),
+    );
+  return row;
+}
+
+/**
  * Record the commit a review just ran against, so the PR list can derive
  * `reviewed` vs `needs_review` (head moved since the last review) vs `stale`.
  */

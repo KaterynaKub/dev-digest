@@ -73,6 +73,11 @@ export function reviewToDto(
   };
 }
 
+/** Resolve after `ms` milliseconds. Used by `runReviewAndWait`'s timeout race. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Build the per-run task instruction line for a PR.
  *

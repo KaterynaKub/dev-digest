@@ -145,6 +145,37 @@ What the reviewer actually sends to the model is assembled in
   section is omitted, not an empty heading. This is independent of the
   `repo_intel` toggle above.
 
+## MCP server
+
+`src/mcp-server.ts` is a second, independent entrypoint — a local MCP server on
+**stdio** (no port, no CORS, no auth: the channel is the child process's own
+stdin/stdout) exposing 5 tools (`list_agents`, `run_agent_on_pr`,
+`get_findings`, `get_conventions`, `get_blast_radius` — a stub) over the
+existing domain logic. It does not import `app.ts`/`server.ts` and is not a
+Fastify module (`src/modules/index.ts` only registers HTTP plugins).
+
+- **Run:** `pnpm mcp` (from `server/`). **Prerequisite:** run `pnpm db:migrate`
+  and `pnpm db:seed` first — migrations do not run on boot, and
+  `LocalNoAuthProvider` (the MVP no-login resolver every tool call goes
+  through) throws `'No default workspace found — run pnpm db:seed.'` without a
+  seeded workspace.
+- **Claude Code:** point a client at `pnpm --dir server mcp` as the launch
+  command, e.g. a repo-root `.mcp.json`:
+  ```json
+  { "mcpServers": { "devdigest": {
+      "command": "pnpm", "args": ["--dir", "server", "mcp"] } } }
+  ```
+- **Claude Desktop:** the same command/args block under `mcpServers` in
+  `claude_desktop_config.json`.
+- `run_agent_on_pr` WAITS for the run to finish (up to 5 minutes) and returns
+  the verdict + findings in one call — no job id, no polling. It is the only
+  tool of the 5 that spends money; a timeout cancels every run it started via
+  the existing `cancelRun` and reports `timed_out` rather than leaving a
+  dangling `running` row.
+- See `specs/0006-mcp-server.md` for the full design (why stdio, the
+  fire-and-forget `runReview` vs the new awaited `runReviewAndWait`, the exact
+  tool descriptions/error texts).
+
 ## Testing
 
 The suite splits by filename — `*.it.test.ts` is DB-backed, everything else is

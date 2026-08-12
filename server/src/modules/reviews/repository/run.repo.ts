@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../../../db/client.js';
 import * as t from '../../../db/schema.js';
 import type { RunSummary, RunTrace } from '@devdigest/shared';
@@ -110,6 +110,23 @@ export async function reapStaleRunningRuns(db: Db): Promise<number> {
     .where(eq(t.agentRuns.status, 'running'))
     .returning({ id: t.agentRuns.id });
   return rows.length;
+}
+
+/**
+ * Current status of exactly the given runIds (order not guaranteed) — used by
+ * `runReviewAndWait`'s fan-out to report "who finished, who didn't" without
+ * re-reading the whole PR history (`listRunsForPull`).
+ */
+export async function getRunStatuses(
+  db: Db,
+  runIds: string[],
+): Promise<{ run_id: string; status: string | null }[]> {
+  if (runIds.length === 0) return [];
+  const rows = await db
+    .select({ id: t.agentRuns.id, status: t.agentRuns.status })
+    .from(t.agentRuns)
+    .where(inArray(t.agentRuns.id, runIds));
+  return rows.map((r) => ({ run_id: r.id, status: r.status }));
 }
 
 // ---- observability: agent_runs + run_traces -------------------------------

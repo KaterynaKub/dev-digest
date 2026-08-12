@@ -43,6 +43,15 @@ export class ReviewRepository {
     return pullRepo.getPrFiles(this.db, prId);
   }
 
+  /** Resolve a PR by `owner/name` + PR number (MCP tools never see an internal id). */
+  findPullByNumber(
+    workspaceId: string,
+    fullName: string,
+    number: number,
+  ): Promise<{ prId: string; repoId: string; headSha: string } | undefined> {
+    return pullRepo.findPullByNumber(this.db, workspaceId, fullName, number);
+  }
+
   // ---- reviews + findings -------------------------------------------------
 
   insertReview(values: {
@@ -84,6 +93,11 @@ export class ReviewRepository {
   /** All runs for a PR (any status), newest first — the PR run history. */
   listRunsForPull(workspaceId: string, prId: string): Promise<RunSummary[]> {
     return runRepo.listRunsForPull(this.db, workspaceId, prId);
+  }
+
+  /** Current status of exactly the given runIds — see `run.repo.ts`. */
+  getRunStatuses(runIds: string[]): Promise<{ run_id: string; status: string | null }[]> {
+    return runRepo.getRunStatuses(this.db, runIds);
   }
 
   /** Delete one agent run (+ its trace via FK cascade). Workspace-scoped. */

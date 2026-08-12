@@ -17,7 +17,7 @@ import { ReviewRunExecutor, type ReviewRunDeps, type Logger } from './run-execut
 import { IntentDeriver } from './intent.js';
 import { loadDiff } from './diff-loader.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
-import { reviewToDto } from './helpers.js';
+import { reviewToDto, sleep } from './helpers.js';
 
 // Re-export DTO types + converters for backward-compatible imports from
 // './service.js' (these previously lived here; logic now in ./helpers.ts).
@@ -172,17 +172,22 @@ export class ReviewService {
   }
 
   /**
-   * Run a review for each target agent. Each agent gets its own runId
-   * (= agent_runs.id) created up-front so the SSE route can be subscribed
-   * before/while the run progresses. A partial failure in one agent does not
-   * abort the others.
+   * Resolve the pull + repo and create one `agent_runs` row per target agent
+   * (status='running'), returning both the raw `jobs` (for `executeRuns`) and
+   * the `runs` summary (for the HTTP/MCP response). Shared by `runReview`
+   * (fire-and-forget) and `runReviewAndWait` (awaited) so the run-creation
+   * step is identical for both — extracted, not duplicated.
    */
-  async runReview(
+  private async createRuns(
     workspaceId: string,
     prId: string,
     targets: AgentRow[],
-    logger?: Logger,
-  ): Promise<{ runs: { run_id: string; agent_id: string; agent_name: string }[]; reviews: ReviewDto[] }> {
+  ): Promise<{
+    pull: NonNullable<Awaited<ReturnType<ReviewRepository['getPull']>>>;
+    repo: NonNullable<Awaited<ReturnType<ReviewRepository['getRepo']>>>;
+    runs: { run_id: string; agent_id: string; agent_name: string }[];
+    jobs: { agent: AgentRow; runId: string }[];
+  }> {
     const pull = await this.repo.getPull(workspaceId, prId);
     if (!pull) throw new NotFoundError('Pull request not found');
     const repo = await this.repo.getRepo(pull.repoId);
@@ -207,6 +212,23 @@ export class ReviewService {
       jobs.push({ agent, runId });
     }
 
+    return { pull, repo, runs, jobs };
+  }
+
+  /**
+   * Run a review for each target agent. Each agent gets its own runId
+   * (= agent_runs.id) created up-front so the SSE route can be subscribed
+   * before/while the run progresses. A partial failure in one agent does not
+   * abort the others.
+   */
+  async runReview(
+    workspaceId: string,
+    prId: string,
+    targets: AgentRow[],
+    logger?: Logger,
+  ): Promise<{ runs: { run_id: string; agent_id: string; agent_name: string }[]; reviews: ReviewDto[] }> {
+    const { pull, repo, runs, jobs } = await this.createRuns(workspaceId, prId, targets);
+
     // Fire-and-forget: the HTTP response returns now with the runIds; reviews
     // are persisted as each agent finishes and the client refetches on SSE done.
     void this.executor.executeRuns(workspaceId, pull, repo, jobs, logger).catch((err) => {
@@ -214,6 +236,56 @@ export class ReviewService {
     });
 
     return { runs, reviews: [] };
+  }
+
+  /**
+   * Run a review for each target agent and WAIT for every run to reach a
+   * terminal status, then return the finished reviews — the "result, not
+   * operation" contract `run_agent_on_pr` (MCP) needs (specs/0006-mcp-server.md).
+   *
+   * Safe to await `executeRuns` (unlike `runReview`'s `void`) because it never
+   * throws on a per-agent failure: `runOneAgent` persists the failure and
+   * swallows it in its own try/catch, and a pre-work failure goes through
+   * `failAll`, which also returns normally. So `executeRuns` resolving means
+   * every queued run has reached a terminal status in the DB — see Step 4 of
+   * the spec for the full argument.
+   *
+   * On timeout, every run still not terminal is cancelled via the existing
+   * `cancelRun` (same mechanism the UI's cancel button uses) and `timedOut`
+   * is reported so the caller (an MCP tool wrapper) can pick the right error
+   * text — a single timed-out agent vs a fan-out where only some finished.
+   */
+  async runReviewAndWait(
+    workspaceId: string,
+    prId: string,
+    targets: AgentRow[],
+    timeoutMs: number,
+    logger?: Logger,
+  ): Promise<{
+    runs: { run_id: string; agent_id: string; agent_name: string }[];
+    timedOut: boolean;
+    reviews: ReviewDto[];
+  }> {
+    const { pull, repo, runs, jobs } = await this.createRuns(workspaceId, prId, targets);
+
+    const TIMEOUT = Symbol('runReviewAndWait timeout');
+    const outcome = await Promise.race([
+      this.executor.executeRuns(workspaceId, pull, repo, jobs, logger).then(() => 'done' as const),
+      sleep(timeoutMs).then(() => TIMEOUT),
+    ]);
+
+    const timedOut = outcome === TIMEOUT;
+    if (timedOut) {
+      for (const { runId } of jobs) {
+        await this.cancelRun(runId);
+      }
+    }
+
+    const allReviews = await this.reviewsForPull(workspaceId, prId);
+    const runIds = new Set(jobs.map((j) => j.runId));
+    const reviews = allReviews.filter((r) => r.run_id !== null && runIds.has(r.run_id));
+
+    return { runs, timedOut, reviews };
   }
 
   private publish(runId: string, kind: RunEventKind, msg: string, data?: unknown) {

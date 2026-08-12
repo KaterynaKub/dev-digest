@@ -214,3 +214,78 @@ green if the "happy path" assertion is weak. The fix used by
 `eq(t.repos.fullName, 'acme/payments-api')`, and hang every fixture PR off
 THAT workspace; a genuine second workspace (for a foreign-PR 404 test) is an
 ADDITIONAL row inserted after seeding, never a replacement for it.
+
+## Decision: `@modelcontextprotocol/sdk@1.30.0`'s `registerTool` takes a zod-3/zod-4 RAW SHAPE, not `z.object(...)` and not JSON Schema
+
+**Found:** 2026-08-12 · **Applies to:** src/mcp/**, src/mcp-server.ts, package.json
+
+`specs/0006-mcp-server.md` was written without the package installed and
+guessed at three possible SDKs (`@modelcontextprotocol/server@2` on zod 4,
+maintenance-only `sdk@1.30` on zod 3, or a raw-JSON-Schema fallback). The
+empirical check (`node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.d.ts`
++ a live `InMemoryTransport` round-trip) showed `sdk@1.30.0` is current, not
+maintenance-only, and its `McpServer.registerTool(name, config, handler)`
+takes `config.inputSchema`/`config.outputSchema` as `ZodRawShapeCompat` =
+`Record<string, ZodType>` — a plain object of field schemas like
+`{ repo: z.string(), pr: z.number() }` — NOT a `z.object({...})` instance and
+not hand-rolled JSON Schema. Its `zod-compat.d.ts` imports both `zod/v3` and
+`zod/v4/core` and dispatches on `~standard` (Standard Schema), so zod 3.25+
+(already the installed version here, dedup'd with `fastify-type-provider-zod`
+and `openai`) works with zero added copies — `pnpm ls zod --depth=2` shows one
+`zod@3.25.76` shared by all three consumers. Passing input validation failures
+(unknown tool, wrong arg type) never throws past `client.callTool` — the SDK
+itself catches them and returns `isError:true` with an `MCP error -32602: ...`
+text, confirming custom `isError:true` wrapping (this module's `toolError`)
+composes cleanly with the SDK's own error path rather than conflicting with it.
+Any future MCP work in this repo should re-verify the installed SDK's `.d.ts`
+before writing schemas — do not assume a specific `@modelcontextprotocol/*`
+package shape from documentation or memory, since the SDK's major/minor moves
+fast and monolithic-vs-split packaging has changed more than once.
+
+## Trap: `CallToolResult.structuredContent` requires an index-signature type — a concrete DTO interface needs an explicit cast
+
+**Found:** 2026-08-12 · **Applies to:** src/mcp/tools/*.ts
+
+`@modelcontextprotocol/sdk`'s `CallToolResult` types `structuredContent` as
+`{ [x: string]: unknown; ... }` (an index signature), but this module's
+response DTOs (`RunAgentResult`, `GetConventionsResult`, etc.) are plain
+`interface`s without one. Returning `{ structuredContent: result, content }`
+where `result` is a concrete DTO fails with `TS2719: Two different types with
+this name exist, but they are unrelated` — a confusing message that does not
+mention "index signature" at all, because TypeScript is comparing two
+structurally-close-but-incompatible `Promise<CallToolResult>` return types
+across the `ToolCallback` overload, not the object literal directly. The fix
+is a single explicit cast at one chokepoint (`withStructuredContent()` in
+`src/mcp/tools/types.ts`, `result as Record<string, unknown>`), not scattering
+`as Record<string, unknown>` across every tool wrapper.
+
+## Trap: an unanticipated throw in an MCP tool reaches the model as `isError:true` with an EMPTY text
+
+**Found:** 2026-08-12 · **Applies to:** src/mcp/server-factory.ts
+
+`@modelcontextprotocol/sdk@1.30.0` catches anything a tool handler throws and
+returns a well-formed `isError: true` `CallToolResult` — but the text content
+is an empty string. The tool "fails safe" at the protocol level while silently
+violating the one rule that makes tool errors useful: the model gets a failure
+carrying no next step, no cause, and nothing to retry against. Typed errors the
+wrapper maps itself (`RepoFormatError` → `toolError(...)`) are unaffected; this
+only bites on the paths nobody anticipated — and those are exactly the ones a
+human will not be watching.
+
+Found by probing a live stdio server with Docker stopped: `list_agents`
+returned `{content:[{type:'text',text:''}],isError:true}`. Unit tests did not
+catch it because they inject mock repositories that never fail this way.
+
+Two compounding details:
+
+1. A failed `postgres` connection throws an `Error` whose `.message` is an
+   **empty string** — the identifying information is in `.code`
+   (`ECONNREFUSED`) and `.name` (`AggregateError`). Interpolating `err.message`
+   into an error text yields `"... request: . Check that ..."`.
+2. The fix belongs at the registration chokepoint (a `guarded()` wrapper around
+   every handler in `server-factory.ts`), not in each tool wrapper — five
+   copies of a catch block is five chances to forget one.
+
+Any tool handler added later is covered automatically by `guarded()`. If a
+future refactor registers a tool by calling `server.registerTool` directly,
+that tool loses this safety net.
