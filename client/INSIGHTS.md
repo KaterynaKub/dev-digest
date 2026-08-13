@@ -266,3 +266,38 @@ render exercises the path: `Element.prototype.scrollIntoView = vi.fn();`. It
 is a prototype-level stub shared across tests in the file — reset call counts
 with `beforeEach(() => vi.mocked(Element.prototype.scrollIntoView).mockClear())`
 when a test asserts call counts (e.g. "scrolls again on a nonce bump").
+
+## Trap: `gridTemplateColumns: "1fr 1fr"` does not make two grid columns equal width when a child has unbreakable content
+
+**Found:** 2026-08-13 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab
+
+`OverviewTab`'s two-column grid (`INTENT` + `BLAST RADIUS`) uses `1fr 1fr`,
+which splits the *available* track space evenly but does not cap a track's
+minimum: every grid item defaults to `min-width: auto`, meaning it cannot
+shrink below its longest unbreakable content box. `BlastRadiusCard` always
+has such content — a file path (`src/api/public/index.ts:23`), an endpoint
+badge, a long symbol name — so that one row pushes its whole column past 50%,
+and the "equal" grid visibly isn't. Fixing only the grid item
+(`minWidth: 0` on the wrapping div, which resets the `auto` floor) is not
+enough by itself: without a place for the long content to break
+(`overflowWrap: "anywhere"` on the text cells, `whiteSpace: "normal"` to
+override `Badge`'s own `nowrap` default), the column snaps to 50% but the
+content then overflows it horizontally instead — a different, equally visible
+bug. Both halves are required together, and neither shows up in a typecheck
+or lint pass since this is pure layout behavior.
+
+## Trap: `@testing-library/user-event` is NOT installed — every existing test uses `fireEvent`
+
+**Found:** 2026-08-13 · **Applies to:** package.json, src/**/*.test.tsx
+
+`react-testing-library` skill guidance (and most RTL tutorials) default to
+`userEvent.setup()` for interactions, but this package's `package.json` only
+lists `@testing-library/jest-dom` and `@testing-library/react` — no
+`@testing-library/user-event`. Importing it fails at collection time with
+Vite's `Failed to resolve import "@testing-library/user-event"`, which reads
+as a broken test file rather than a missing dependency (the error names the
+importing test, not the package). Every existing test in this repo
+(`SmartDiffSection.test.tsx` and others) already uses
+`fireEvent` from `@testing-library/react` for clicks — follow that pattern,
+not the skill's default, unless a future task explicitly adds the dependency
+via a real `pnpm add` (never assume it is present).

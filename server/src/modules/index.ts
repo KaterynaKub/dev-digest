@@ -10,6 +10,7 @@ import repoIntel from './repo-intel/routes.js';
 import skills from './skills/routes.js';
 import conventions from './conventions/routes.js';
 import smartDiff from './smart-diff/routes.js';
+import blast from './blast/routes.js';
 
 /**
  * Module registry. Each feature module is a Fastify plugin in
@@ -20,10 +21,10 @@ import smartDiff from './smart-diff/routes.js';
  * than via filesystem autoload so the same code path works under tsx, the
  * bundler, and vitest — native dynamic import() of .ts files is not portable.)
  *
- * This started as the Part-0 starter set; `skills`, `conventions`, and
- * `smartDiff` have since landed. Each future course lesson adds its own
- * module here (blast, brief/context/onboarding, eval/ci/hooks, memory,
- * plugins, …) without touching any other module or the shared schema.
+ * This started as the Part-0 starter set; `skills`, `conventions`, `smartDiff`,
+ * and `blast` have since landed. Each future course lesson adds its own
+ * module here (brief/context/onboarding, eval/ci/hooks, memory, plugins, …)
+ * without touching any other module or the shared schema.
  */
 export const modules: Record<string, FastifyPluginAsync> = {
   settings,
@@ -37,4 +38,5 @@ export const modules: Record<string, FastifyPluginAsync> = {
   skills,
   conventions,
   smartDiff,
+  blast,
 };

@@ -289,3 +289,40 @@ Two compounding details:
 Any tool handler added later is covered automatically by `guarded()`. If a
 future refactor registers a tool by calling `server.registerTool` directly,
 that tool loses this safety net.
+
+---
+
+## Trap: `path.relative` on Windows silently emptied the import graph — index still said `full`
+
+**Found:** 2026-08-13 · **Applies to:** src/adapters/depgraph/index.ts
+
+`DepCruiseGraph.toRel()` returned `path.relative(...)` verbatim. That carries
+**platform** separators, so on Windows it produced `client\src\app.ts` — while
+every path the indexer stores uses forward slashes (`pipeline/walk.ts:119`
+already normalises with `.split(sep).join('/')`).
+
+The consequence was a chain of silent degradation, not a crash:
+
+1. `buildEdges` guards each module with `fileSet.has(from)` / `fileSet.has(to)`.
+   With backslash keys, **every** check failed → `continue` → `[]` edges.
+2. No throw meant `graphFailed` stayed unset, so the pipeline stamped the index
+   `status: 'full'` (`pipeline/full.ts:262`) on a completely empty `file_edges`.
+3. `resolveReferences` JOINs `file_edges` — with zero edges it resolved zero
+   references. Live DB: 6416 references, **0** with `decl_file`.
+4. `getResolvedCallers` filters on `decl_file`, so Blast Radius reported
+   `38 symbols · 0 callers` on an index that reported itself perfectly healthy.
+
+The `catch { return []; }` in `buildEdges` is documented as degrading a broken
+tsconfig to "no edges", which made the empty result look intentional. It was
+not — the failure never reached the catch.
+
+Verified end-to-end by reindexing after the fix: `file_edges` 0 → 514,
+resolved references 0 → 640, on the same repo at the same `status: 'full'`.
+
+**Testing note:** dependency-cruiser resolves inputs against `process.cwd()`.
+A fixture under `os.tmpdir()` (another drive on Windows) makes `cruise` stat a
+mangled path like `<cwd>\C:\Users\...` and throw ENOENT, so the adapter is
+never exercised. `test/depgraph-paths.test.ts` builds its fixture under the
+package directory instead, and asserts `edges.length > 0` — a test that only
+checks separators passes vacuously on an empty result, which is precisely the
+bug being guarded against.

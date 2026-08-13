@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, API_BASE } from "../api";
 import { notify } from "../toast";
 import type {
+  BlastRadius,
   FindingActionKind,
   PrIntentRecord,
   PrReviewComment,
@@ -166,6 +167,18 @@ export function useSmartDiff(prId: string | null | undefined) {
   return useQuery({
     queryKey: ["smart-diff", prId],
     queryFn: () => api.get<SmartDiff>(`/pulls/${prId}/smart-diff`),
+    enabled: !!prId,
+  });
+}
+
+// ---- Blast Radius (downstream impact map from the repo-intel index) ----
+/** Read of the repo-intel index — not derived from a review run, so a review
+ *  finishing does NOT invalidate this (unlike Smart Diff). It depends on the
+ *  index instead, invalidated by `useResyncRepoIntel` (hooks/repo-intel.ts). */
+export function useBlast(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["blast", prId],
+    queryFn: () => api.get<BlastRadius>(`/pulls/${prId}/blast`),
     enabled: !!prId,
   });
 }

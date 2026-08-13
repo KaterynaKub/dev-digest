@@ -69,10 +69,25 @@ export const DownstreamImpact = z.object({
 });
 export type DownstreamImpact = z.infer<typeof DownstreamImpact>;
 
+/**
+ * State of the repo-intel index the map was built from. Never omitted — a
+ * consumer must be able to tell "index is full, downstream really is empty"
+ * apart from "index is missing/partial, downstream is unknown". See
+ * `specs/0007-blast-radius.md` §4.2 (decision: variant B).
+ */
+export const BlastIndexStatus = z.enum(['full', 'partial', 'degraded', 'failed']);
+export type BlastIndexStatus = z.infer<typeof BlastIndexStatus>;
+
 export const BlastRadius = z.object({
   changed_symbols: z.array(ChangedSymbol),
   downstream: z.array(DownstreamImpact),
   summary: z.string(),
+  /** State of the index this map was built from. Never omitted. */
+  index_status: BlastIndexStatus,
+  /** true when the map was built on incomplete data. */
+  degraded: z.boolean(),
+  /** Machine-readable degradation reason; null on a full index. */
+  reason: z.string().nullish(),
 });
 export type BlastRadius = z.infer<typeof BlastRadius>;
 
