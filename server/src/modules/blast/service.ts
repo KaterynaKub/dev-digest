@@ -30,7 +30,8 @@ export class BlastService {
     if (paths.length === 0) {
       // A PR that changed no files has a genuinely empty, FULL-index map —
       // this is a fact ("no files changed"), not a data gap, so repoIntel is
-      // not even called.
+      // not even called. No index was read, so there is no sha to report and
+      // nothing to compare: `indexed_sha` stays null and `index_stale` false.
       return buildBlastRadius(
         { changedSymbols: [], callers: [], impactedEndpoints: [], degraded: false },
         { status: 'full' },
@@ -59,6 +60,10 @@ export class BlastService {
     // than trusting blastResult to imply 'full'.
     const indexState = indexOutcome.status === 'fulfilled' ? indexOutcome.value : null;
 
-    return buildBlastRadius(blastOutcome.value, indexState);
+    // `pull.headSha` is the PR revision under review; the index names its own in
+    // `lastIndexedSha`. Comparing them here — where both are in hand — is what
+    // spares every consumer from re-deriving staleness, exactly as `degraded` is
+    // resolved once rather than inferred downstream.
+    return buildBlastRadius(blastOutcome.value, indexState, pull.headSha);
   }
 }

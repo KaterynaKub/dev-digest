@@ -53,6 +53,8 @@ function makeBlastRadius(overrides: Partial<BlastRadius> = {}): BlastRadius {
     index_status: "full",
     degraded: false,
     reason: null,
+    indexed_sha: "abc1234def",
+    index_stale: false,
     ...overrides,
   };
 }
@@ -134,6 +136,71 @@ describe("BlastRadiusCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "tree" }));
     expect(screen.getByText("foo()")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("clicking a caller's file:line calls onGoToLocation with that file and line", () => {
+    const onGoToLocation = vi.fn();
+    mockedUseBlast.mockReturnValue(queryResult({ data: makeBlastRadius() }));
+    mockedUseResync.mockReturnValue(resyncResult());
+    renderCard({ onGoToLocation });
+
+    fireEvent.click(screen.getByText("foo()"));
+    const locationButton = screen.getByRole("button", { name: "Open b.ts at line 10" });
+    fireEvent.click(locationButton);
+
+    // The sha travels with the coordinates: a line number is only meaningful
+    // against the commit the indexer recorded it in.
+    expect(onGoToLocation).toHaveBeenCalledWith("b.ts", 10, "abc1234def");
+    // The card decides nothing about WHERE this opens — no tab, no URL, and in
+    // particular no github.com link of its own (the host owns that choice).
+    expect(document.querySelector('a[href*="github.com"]')).not.toBeInTheDocument();
+  });
+
+  it("without onGoToLocation the file:line stays plain text, not a button", () => {
+    mockedUseBlast.mockReturnValue(queryResult({ data: makeBlastRadius() }));
+    mockedUseResync.mockReturnValue(resyncResult());
+    renderCard();
+
+    fireEvent.click(screen.getByText("foo()"));
+    expect(screen.getByText(/b\.ts:10/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Open b\.ts/i })).not.toBeInTheDocument();
+  });
+
+  it("a stale index shows the staleness notice and its short sha, while staying non-degraded", () => {
+    mockedUseBlast.mockReturnValue(
+      queryResult({
+        data: makeBlastRadius({ index_stale: true, indexed_sha: "abc1234def5678" }),
+      }),
+    );
+    mockedUseResync.mockReturnValue(resyncResult());
+    renderCard();
+
+    expect(screen.getByText(/built from an earlier commit/i)).toBeInTheDocument();
+    expect(screen.getByText(/abc1234/)).toBeInTheDocument();
+    // Stale is NOT degraded — the "index not built" wording must stay absent,
+    // and the real counts are still shown rather than suppressed.
+    expect(screen.queryByText(/index not built/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/foo\(\)/)).toBeInTheDocument();
+  });
+
+  it("a current index shows no staleness notice", () => {
+    mockedUseBlast.mockReturnValue(queryResult({ data: makeBlastRadius() }));
+    mockedUseResync.mockReturnValue(resyncResult());
+    renderCard();
+    expect(screen.queryByText(/built from an earlier commit/i)).not.toBeInTheDocument();
+  });
+
+  // The reindex action used to live only inside the degraded banner, so a
+  // healthy-but-stale index offered no way to fix itself from this card.
+  it("offers reindex on a healthy index, not only when degraded", () => {
+    const mutate = vi.fn();
+    mockedUseBlast.mockReturnValue(queryResult({ data: makeBlastRadius() }));
+    mockedUseResync.mockReturnValue(resyncResult({ mutate }));
+    renderCard();
+
+    const resyncButton = screen.getByRole("button", { name: /resync/i });
+    fireEvent.click(resyncButton);
+    expect(mutate).toHaveBeenCalled();
   });
 
   it("degraded index shows the index-state banner (never 'no downstream callers found') with a resync action", () => {

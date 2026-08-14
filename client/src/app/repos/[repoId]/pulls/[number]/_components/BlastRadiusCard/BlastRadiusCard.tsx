@@ -27,11 +27,27 @@ import { chevronFor, s } from "./styles";
 export interface BlastRadiusCardProps {
   prId: string | null;
   repoId: string | null;
+  /**
+   * Opens a caller's `file`:`line`. WHERE it opens is the host page's decision
+   * (Diff tab for a file this PR changed, GitHub blob for one it did not) —
+   * this card only reports which caller was clicked, and deliberately knows
+   * nothing about the PR's file list or the repo's full name.
+   *
+   * `sha` is the commit those coordinates belong to (`indexed_sha`), passed
+   * along because the card is the only place that holds it: a line number is
+   * meaningless without the revision it was recorded against, and the host
+   * would otherwise fall back to the PR head and land on unrelated text.
+   *
+   * Optional: without it the `file:line` renders as the plain text it always
+   * was, so the card stays renderable outside a navigation host (same idiom as
+   * `SmartDiffSection#onGoToFinding`).
+   */
+  onGoToLocation?: (file: string, line: number, sha: string | null) => void;
 }
 
 type ViewMode = "tree" | "graph";
 
-export function BlastRadiusCard({ prId, repoId }: BlastRadiusCardProps) {
+export function BlastRadiusCard({ prId, repoId, onGoToLocation }: BlastRadiusCardProps) {
   const t = useTranslations("blast");
   const { data, isLoading, isError, refetch } = useBlast(prId);
   const resync = useResyncRepoIntel(repoId);
@@ -78,23 +94,40 @@ export function BlastRadiusCard({ prId, repoId }: BlastRadiusCardProps) {
       <SectionLabel
         icon="Zap"
         right={
-          <div style={s.toggleWrap} role="group">
-            <button
-              type="button"
-              style={s.toggleButton(view === "tree")}
-              aria-pressed={view === "tree"}
-              onClick={() => setView("tree")}
+          <div style={s.headerActions}>
+            <div style={s.toggleWrap} role="group">
+              <button
+                type="button"
+                style={s.toggleButton(view === "tree")}
+                aria-pressed={view === "tree"}
+                onClick={() => setView("tree")}
+              >
+                {t("view.tree")}
+              </button>
+              <button
+                type="button"
+                style={s.toggleButton(view === "graph")}
+                aria-pressed={view === "graph"}
+                onClick={() => setView("graph")}
+              >
+                {t("view.graph")}
+              </button>
+            </div>
+            {/* Reindexing is available on EVERY state, not just the degraded
+                banner it used to live in. A `full` index can still be stale —
+                that is the case the banner never covered — and a reviewer who
+                spots wrong line numbers needs the fix where they are looking,
+                not only when the server has already admitted a problem. */}
+            <Button
+              kind="ghost"
+              size="sm"
+              icon="RefreshCw"
+              loading={resync.isPending}
+              disabled={!repoId}
+              onClick={() => resync.mutate()}
             >
-              {t("view.tree")}
-            </button>
-            <button
-              type="button"
-              style={s.toggleButton(view === "graph")}
-              aria-pressed={view === "graph"}
-              onClick={() => setView("graph")}
-            >
-              {t("view.graph")}
-            </button>
+              {resync.isPending ? t("degraded.resyncing") : t("degraded.resync")}
+            </Button>
           </div>
         }
       >
@@ -119,16 +152,28 @@ export function BlastRadiusCard({ prId, repoId }: BlastRadiusCardProps) {
               </div>
             )}
           </div>
-          <Button
-            kind="ghost"
-            size="sm"
-            icon="RefreshCw"
-            loading={resync.isPending}
-            disabled={!repoId}
-            onClick={() => resync.mutate()}
-          >
-            {resync.isPending ? t("degraded.resyncing") : t("degraded.resync")}
-          </Button>
+          {/* No Resync button here any more — it moved to the card header, where
+              it covers the stale-but-healthy case this banner never sees. */}
+        </div>
+      )}
+
+      {/* Staleness is its own state, deliberately NOT folded into the degraded
+          banner: the index is intact and `index_status` still means what it
+          says — it simply describes an earlier commit, so the line numbers
+          below point into that tree rather than the PR head. Rendered even when
+          degraded is false, which is exactly when it would otherwise go
+          unreported. */}
+      {data.index_stale && (
+        <div style={s.staleBanner} role="status">
+          <Icon.Clock size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+          <div style={s.degradedBannerText}>
+            <div>{t("stale.body")}</div>
+            {data.indexed_sha && (
+              <div style={{ marginTop: 4, fontSize: 11.5, color: "var(--text-muted)" }} className="mono">
+                {t("stale.indexedAt", { sha: data.indexed_sha.slice(0, 7) })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -147,6 +192,12 @@ export function BlastRadiusCard({ prId, repoId }: BlastRadiusCardProps) {
               open={!!openSymbols[symbol.symbol]}
               onToggle={() => toggleSymbol(symbol.symbol)}
               callerCountLabel={t("callerCount", { count: symbol.callers.length })}
+              onGoToLocation={
+                onGoToLocation
+                  ? (file, line) => onGoToLocation(file, line, data.indexed_sha ?? null)
+                  : undefined
+              }
+              openLocationLabel={(file, line) => t("openLocation", { file, line })}
             />
           ))}
         </div>
@@ -164,11 +215,17 @@ function SymbolRow({
   open,
   onToggle,
   callerCountLabel,
+  onGoToLocation,
+  openLocationLabel,
 }: {
   symbol: DownstreamImpact;
   open: boolean;
   onToggle: () => void;
   callerCountLabel: string;
+  onGoToLocation?: (file: string, line: number) => void;
+  /** Accessible name for the `file:line` button — the only string this row
+   *  builds, and it comes from `messages/`, never from JSX. */
+  openLocationLabel: (file: string, line: number) => string;
 }) {
   return (
     <div style={s.symbolRow}>
@@ -197,9 +254,23 @@ function SymbolRow({
             <div key={`${caller.file}:${caller.line}:${i}`} style={s.callerRow}>
               <span className="mono">{caller.name}</span>
               {" — "}
-              <span style={s.callerFile} className="mono">
-                {caller.file}:{caller.line}
-              </span>
+              {/* Without a host the location stays exactly the plain text it
+                  was: a button that navigates nowhere is worse than a label. */}
+              {onGoToLocation ? (
+                <button
+                  type="button"
+                  style={s.callerFileButton}
+                  className="mono"
+                  aria-label={openLocationLabel(caller.file, caller.line)}
+                  onClick={() => onGoToLocation(caller.file, caller.line)}
+                >
+                  {caller.file}:{caller.line}
+                </button>
+              ) : (
+                <span style={s.callerFile} className="mono">
+                  {caller.file}:{caller.line}
+                </span>
+              )}
             </div>
           ))}
 

@@ -38,6 +38,8 @@ export interface BlastResultLike {
 /** Structural mirror of `repo-intel/types.ts#IndexState`, narrowed to what this helper reads. */
 export interface IndexStateLike {
   status: 'full' | 'partial' | 'degraded' | 'failed';
+  /** `repo_index_state.last_indexed_sha` — the revision every caller line refers to. */
+  lastIndexedSha?: string;
 }
 
 const EMPTY_FACTS = { endpoints: [] as string[], crons: [] as string[] };
@@ -87,8 +89,26 @@ function byString(a: string, b: string): number {
  * every comparator ends in a lexicographic tie-break — so two calls with the
  * same input in a different order produce a byte-identical result.
  */
-export function buildBlastRadius(result: BlastResultLike, indexState: IndexStateLike | null): BlastRadius {
+export function buildBlastRadius(
+  result: BlastResultLike,
+  indexState: IndexStateLike | null,
+  /**
+   * The PR's head sha, used ONLY to decide `index_stale`. Optional so the
+   * existing call sites that have no PR in hand (the zero-files early return,
+   * the index-failed path) stay valid; absent means "cannot compare", which is
+   * reported as not-stale rather than guessed as stale.
+   */
+  headSha?: string,
+): BlastRadius {
   const { index_status, degraded, reason } = resolveIndexState(result, indexState);
+
+  // An empty string is what `getIndexState` synthesises for "no index at all"
+  // (service.ts:238) — that is an absence, not a commit, so it must not become
+  // a sha a consumer would try to deep-link against.
+  const indexed_sha = indexState?.lastIndexedSha ? indexState.lastIndexedSha : null;
+  // Only ever true on a real, differing pair. Unknown on either side means the
+  // comparison was not made — never assert staleness we did not observe.
+  const index_stale = indexed_sha != null && headSha != null && indexed_sha !== headSha;
 
   const changed_symbols: ChangedSymbol[] = result.changedSymbols
     .map((s) => ({ file: s.file, name: s.name, kind: s.kind }))
@@ -149,7 +169,7 @@ export function buildBlastRadius(result: BlastResultLike, indexState: IndexState
 
   const trimmedDownstream = downstream.slice(0, MAX_DOWNSTREAM_SYMBOLS);
 
-  const summary = buildSummary(changed_symbols.length, trimmedDownstream, index_status);
+  const summary = buildSummary(changed_symbols.length, trimmedDownstream, index_status, index_stale);
 
   return {
     changed_symbols,
@@ -158,6 +178,8 @@ export function buildBlastRadius(result: BlastResultLike, indexState: IndexState
     index_status,
     degraded,
     reason,
+    indexed_sha,
+    index_stale,
   };
 }
 
@@ -170,6 +192,7 @@ function buildSummary(
   symbolCount: number,
   downstream: DownstreamImpact[],
   indexStatus: BlastRadius['index_status'],
+  indexStale: boolean,
 ): string {
   if (indexStatus === 'degraded' || indexStatus === 'failed') {
     return 'Index not built — downstream unavailable.';
@@ -177,8 +200,21 @@ function buildSummary(
   if (indexStatus === 'partial') {
     return 'Index is partial — downstream may be incomplete.';
   }
+  // Staleness is reported even on a `full` index, and BEFORE the counts: an
+  // intact index answering about an older commit still produces numbers that
+  // are honest about that commit and misleading about this PR. Saying "3
+  // callers" without saying "as of an older commit" is the same class of
+  // mistake as reporting an empty downstream on a broken index as safety.
+  if (indexStale) {
+    return `Index is from an earlier commit — counts may be out of date. ${countsSummary(symbolCount, downstream)}`;
+  }
 
-  // index_status === 'full' from here on.
+  // index_status === 'full' and not stale from here on.
+  return countsSummary(symbolCount, downstream);
+}
+
+/** The arithmetic half of the summary — no index-state wording of its own. */
+function countsSummary(symbolCount: number, downstream: DownstreamImpact[]): string {
   if (downstream.length === 0) {
     return symbolCount === 0
       ? 'No changed symbols detected.'

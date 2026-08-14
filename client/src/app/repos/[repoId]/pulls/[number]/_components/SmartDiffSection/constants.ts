@@ -61,3 +61,8 @@ export const SEVERITY_ROW_BG_HOVER: Record<Severity, string> = {
   WARNING: "rgba(245, 158, 11, 0.24)",
   SUGGESTION: "rgba(59, 130, 246, 0.24)",
 };
+
+/** How long a row arrived at from Blast Radius keeps its highlight. Long enough
+ *  to find after a smooth scroll, short enough not to be mistaken for a
+ *  finding's own permanent tint. */
+export const TARGET_HIGHLIGHT_MS = 2000;

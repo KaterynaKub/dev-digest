@@ -5,9 +5,10 @@
  * can read and recover from (principle #4, "error leads forward"), not as a
  * transport-level fault.
  *
- * This is the ONLY place in the codebase that spells out the 9 verbatim error
+ * This is the ONLY place in the codebase that spells out the verbatim error
  * texts from `specs/0006-mcp-server.md` Step 6 — never duplicated inline in a
- * tool wrapper or the service.
+ * tool wrapper or the service. (The 9th, `blastRadiusStubText`, was removed
+ * when `get_blast_radius` stopped being a stub — 0007 Step 8.)
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
@@ -51,10 +52,6 @@ export function timeoutFanOutText(k: number, n: number): string {
 
 export function runFailedText(error: string): string {
   return `The review failed: ${error}. Call list_agents to check the agent's provider and model; if its API key is missing, add it in the DevDigest studio settings.`;
-}
-
-export function blastRadiusStubText(): string {
-  return `STUB: get_blast_radius is not implemented yet. Use get_findings on the same pull request — it shows the concrete problems in the changed code.`;
 }
 
 /**

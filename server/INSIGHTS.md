@@ -326,3 +326,79 @@ never exercised. `test/depgraph-paths.test.ts` builds its fixture under the
 package directory instead, and asserts `edges.length > 0` — a test that only
 checks separators passes vacuously on an empty result, which is precisely the
 bug being guarded against.
+
+## Decision: an MCP tool serving a contract must type its port against that contract, not a local re-declaration
+
+**Found:** 2026-08-13 · **Applies to:** src/modules/mcp-tools/service.ts, src/mcp/tools/get-blast-radius.ts
+
+`McpToolsService`'s constraint 2 (no cross-module service imports) is normally
+satisfied by re-declaring a structural port — `ReviewRunner` and
+`ConventionsReader` both spell out their own shapes. `BlastReader` deliberately
+does NOT: it is typed as `forPull(...): Promise<BlastRadius>`, importing the
+contract type from `@devdigest/shared`. Constraint 2 forbids importing
+`BlastService`, not the contract every layer already speaks — and re-spelling
+`BlastRadius` here would create a second definition of the SAME payload that
+could drift from the vendored contract with no compiler error, on a surface
+whose whole job is to serve it verbatim.
+
+Two related traps this exposed:
+
+- `BlastRadius.reason` is `.nullish()` in the contract, so `buildBlastRadius`
+  may legitimately omit the key. The MCP SDK validates a tool's own output
+  against its declared `outputSchema`, where an ABSENT key fails `.nullable()`
+  while an explicit `null` passes. The wrapper normalises with
+  `{ ...result, reason: result.reason ?? null }` — a `nullish()` contract field
+  is not automatically safe to forward into an `outputSchema`.
+- `index_status`/`degraded`/`reason` must reach the model unflattened, for the
+  same reason `blast/CLAUDE.md` protects them on the HTTP side: an empty
+  `downstream` means "nothing calls this" on a full index and "unknown" on a
+  broken one. Trimming them for brevity would let a model report an unmeasured
+  blast radius as a safe one. `test/mcp-tools.test.ts` guards this with a named
+  negative test mirroring `blast-helpers.test.ts`'s.
+
+## Tooling: `pnpm test` runs BOTH lanes at once and the integration lane fails under that contention
+
+**Found:** 2026-08-13 · **Applies to:** package.json
+
+`server`'s `test` script is a bare `vitest run`, which collects all 42 files —
+hermetic and `*.it.test.ts` together. Run that way, several Testcontainers
+suites fail (`Cannot read properties of undefined`, ~6 tests) purely from
+concurrency; run on its own, `pnpm exec vitest run .it.test` is green
+(15 passed / 44 skipped) on the identical tree. Verified by stashing all local
+changes and re-running: the failures reproduce with a clean working tree, so
+they are a harness artefact, not a regression.
+
+Judge a change by the two lanes separately, exactly as `TESTING.md` documents
+them (`vitest run --exclude '**/*.it.test.ts'` and `vitest run .it.test`), and
+do not read a red `pnpm test` as breakage without splitting it first.
+
+## Trap: every blast `file:line` is a coordinate in `last_indexed_sha`, not in the PR head
+
+**Found:** 2026-08-13 · **Applies to:** src/modules/blast, src/modules/repo-intel
+
+`references.line` is recorded when the indexer walks a revision, and
+`repo_index_state.last_indexed_sha` names that revision. Nothing re-anchors
+those numbers afterwards, so on a repo whose index has fallen behind, a caller
+row still reports the line it occupied at index time. Observed live: the index
+sat at `66727c85` (June 15) while HEAD was two months newer, and
+`reviews/service.ts` had roughly doubled in length — so a `NotFoundError`
+caller recorded at line 53 pointed into the middle of a JSDoc block in the
+current file, and `enclosingFromRows` (`repo-intel/service.ts:775`, "nearest
+symbol at or above the line") labelled it with whatever function preceded that
+stale line. Both the number AND the caller name come from the old snapshot;
+neither is wrong at the time it was written, and nothing in `index_status`
+reveals the gap — the index reported itself `full`, because it IS full, just
+for a different commit.
+
+The rule: never resolve a blast coordinate against the PR head. `BlastRadius`
+now carries `indexed_sha` (null when there is no index) and a server-computed
+`index_stale`, and any deep-link must be pinned to `indexed_sha`. Staleness is
+deliberately NOT folded into `degraded`: a stale index is intact and internally
+consistent, so conflating the two would either understate a broken index or
+overstate a merely old one.
+
+A related sharpening of the same data: the caller de-duplication key in
+`repo-intel/service.ts` is `fromPath|enclosing|toSymbol` with NO line, so
+several calls to the same symbol from the same function collapse to whichever
+row arrived first. The callers list is therefore "places that call this",
+never "all call sites" — do not read a count of 1 as proof of a single call.

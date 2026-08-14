@@ -84,8 +84,23 @@ describe('AI contracts parse fixtures', () => {
         index_status: 'full',
         degraded: false,
         reason: null,
+        indexed_sha: 'a1b2c3d',
+        index_stale: false,
       }),
     ).not.toThrow();
+    // `indexed_sha` is nullable but NOT optional: an index that named no commit
+    // must say so explicitly rather than leaving the field out, so a consumer
+    // building a deep-link cannot mistake "absent" for "same as head".
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [],
+        downstream: [],
+        summary: 's',
+        index_status: 'full',
+        degraded: false,
+        reason: null,
+      }),
+    ).toThrow();
     expect(() =>
       Risks.parse({
         risks: [{ kind: 'security', title: 't', explanation: 'e', severity: 'high', file_refs: [] }],

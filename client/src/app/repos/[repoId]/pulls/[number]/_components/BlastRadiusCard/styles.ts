@@ -73,6 +73,35 @@ export const s = {
     marginBottom: 12,
   } satisfies CSSProperties,
   degradedBannerText: { flex: 1 } satisfies CSSProperties,
+  /** Header row holding the tree/graph toggle plus the always-available Resync
+   *  action. `flexWrap` because the two together can outgrow the 50% column
+   *  this card lives in (spec §6.7) — they stack rather than push it wider. */
+  headerActions: {
+    marginLeft: "auto",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  } satisfies CSSProperties,
+  /** Stale-index notice. Deliberately quieter than `degradedBanner` — neutral
+   *  border and muted icon instead of the warning hue: the data is intact and
+   *  internally consistent, it just describes an earlier commit. Styling it as
+   *  a warning would put it on a par with "the index is broken", which is a
+   *  materially worse state. */
+  staleBanner: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: "10px 12px",
+    borderRadius: 6,
+    border: "1px solid var(--border)",
+    background: "var(--bg-surface)",
+    fontSize: 12.5,
+    color: "var(--text-secondary)",
+    lineHeight: 1.5,
+    marginBottom: 12,
+  } satisfies CSSProperties,
   tree: {
     display: "flex",
     flexDirection: "column",
@@ -115,6 +144,25 @@ export const s = {
     overflowWrap: "anywhere",
   } satisfies CSSProperties,
   callerFile: { color: "var(--text-muted)" } satisfies CSSProperties,
+  /** The same `file:line` as `callerFile`, as a button. Button reset first, then
+   *  the affordance: `--accent-text` + underline, so it reads as a link on a
+   *  row whose other half (the caller's own name) is plain text. `textAlign`
+   *  and `overflowWrap` are re-stated because a `<button>` resets neither, and
+   *  a long path must break inside the 50% column exactly as the span did
+   *  (spec §6.7) rather than centre itself and overflow. */
+  callerFileButton: {
+    background: "none",
+    borderStyle: "none",
+    padding: 0,
+    font: "inherit",
+    fontSize: "inherit",
+    cursor: "pointer",
+    color: "var(--accent-text)",
+    textDecoration: "underline",
+    textUnderlineOffset: 2,
+    textAlign: "left",
+    overflowWrap: "anywhere",
+  } satisfies CSSProperties,
   factsRow: {
     display: "flex",
     flexWrap: "wrap",

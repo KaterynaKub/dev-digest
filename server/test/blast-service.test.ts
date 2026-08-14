@@ -122,3 +122,49 @@ describe('BlastService.forPull', () => {
     expect(result.reason).toBeNull();
   });
 });
+
+describe('BlastService.forPull — index sha vs PR head', () => {
+  it("passes the PR's head sha through so a lagging index is flagged stale", async () => {
+    const service = buildService({
+      repo: buildRepo({
+        getPull: vi.fn(
+          async () =>
+            ({ id: PR_ID, repoId: REPO_ID, workspaceId: WORKSPACE_ID, headSha: 'head-sha' }) as never,
+        ),
+      }),
+      repoIntel: buildRepoIntel({
+        getIndexState: vi.fn(
+          async () => ({ status: 'full', lastIndexedSha: 'older-sha' }) as IndexState,
+        ),
+      }),
+    });
+
+    const radius = await service.forPull(WORKSPACE_ID, PR_ID);
+
+    expect(radius.indexed_sha).toBe('older-sha');
+    expect(radius.index_stale).toBe(true);
+    // Stale is NOT degraded: the index is intact, it just describes an older tree.
+    expect(radius.index_status).toBe('full');
+    expect(radius.degraded).toBe(false);
+  });
+
+  it('an index built from the head commit is not stale', async () => {
+    const service = buildService({
+      repo: buildRepo({
+        getPull: vi.fn(
+          async () =>
+            ({ id: PR_ID, repoId: REPO_ID, workspaceId: WORKSPACE_ID, headSha: 'same-sha' }) as never,
+        ),
+      }),
+      repoIntel: buildRepoIntel({
+        getIndexState: vi.fn(
+          async () => ({ status: 'full', lastIndexedSha: 'same-sha' }) as IndexState,
+        ),
+      }),
+    });
+
+    const radius = await service.forPull(WORKSPACE_ID, PR_ID);
+    expect(radius.index_stale).toBe(false);
+    expect(radius.indexed_sha).toBe('same-sha');
+  });
+});

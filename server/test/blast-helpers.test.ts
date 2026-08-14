@@ -284,3 +284,65 @@ describe('buildBlastRadius — index state, the main requirement of this iterati
     expect(full.summary).not.toBe(partial.summary);
   });
 });
+
+describe('buildBlastRadius — indexed_sha and staleness', () => {
+  const INDEXED: IndexStateLike = { status: 'full', lastIndexedSha: 'sha-old' };
+
+  it('reports the sha the index was built from, not the PR head', () => {
+    const radius = buildBlastRadius(emptyResult(), INDEXED, 'sha-head');
+    expect(radius.indexed_sha).toBe('sha-old');
+  });
+
+  it('index_stale is true when the indexed sha differs from the PR head', () => {
+    const radius = buildBlastRadius(emptyResult(), INDEXED, 'sha-head');
+    expect(radius.index_stale).toBe(true);
+    // Staleness surfaces in the summary even though the index itself is FULL —
+    // an intact index answering about an older commit still misreports this PR.
+    expect(radius.index_status).toBe('full');
+    expect(radius.degraded).toBe(false);
+    expect(radius.summary).toMatch(/earlier commit/i);
+  });
+
+  it('index_stale is false when the index is current', () => {
+    const radius = buildBlastRadius(emptyResult(), INDEXED, 'sha-old');
+    expect(radius.index_stale).toBe(false);
+    expect(radius.summary).not.toMatch(/earlier commit/i);
+  });
+
+  // Never assert a staleness we did not observe: an unknown sha on either side
+  // is "could not compare", which must not be reported as "out of date".
+  it('an unknown sha on either side is not-stale, never guessed', () => {
+    expect(buildBlastRadius(emptyResult(), INDEXED).index_stale).toBe(false);
+    expect(buildBlastRadius(emptyResult(), FULL, 'sha-head').index_stale).toBe(false);
+    expect(buildBlastRadius(emptyResult(), null, 'sha-head').index_stale).toBe(false);
+  });
+
+  // `getIndexState` synthesises lastIndexedSha: '' for "no index at all"
+  // (repo-intel/service.ts). An empty string is an absence, not a commit — a
+  // consumer must not build a deep-link against it.
+  it("the synthesised empty sha of a missing index becomes null, not ''", () => {
+    const radius = buildBlastRadius(
+      emptyResult(),
+      { status: 'degraded', lastIndexedSha: '' },
+      'sha-head',
+    );
+    expect(radius.indexed_sha).toBeNull();
+    expect(radius.index_stale).toBe(false);
+  });
+
+  it('a stale index still reports its real counts alongside the warning', () => {
+    const radius = buildBlastRadius(
+      {
+        changedSymbols: [{ file: 'a.ts', name: 'foo', kind: 'function' }],
+        callers: [{ file: 'b.ts', symbol: 'bar', viaSymbol: 'foo', line: 7, rank: 1 }],
+        impactedEndpoints: [],
+        factsByFile: {},
+      },
+      INDEXED,
+      'sha-head',
+    );
+    expect(radius.summary).toMatch(/earlier commit/i);
+    expect(radius.summary).toMatch(/1 caller/);
+    expect(radius.downstream).toHaveLength(1);
+  });
+});
