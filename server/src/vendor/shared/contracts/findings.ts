@@ -120,22 +120,17 @@ export type FindingSummary = z.infer<typeof FindingSummary>;
 
 /**
  * Findings roll-up attached to a PR list row. `counts` covers ALL of the latest
- * review's findings; `items` is capped, so `truncated` drives a "+N more" hint.
+ * review's findings; `items` is capped, so `remaining_count` drives a "+N more"
+ * hint.
  */
 export const PrFindings = z.object({
   counts: SeverityCounts,
   /** Severity-ordered (CRITICAL first), capped at FINDINGS_PREVIEW_LIMIT. */
   items: z.array(FindingSummary),
   /** Total findings minus items.length. */
-  truncated: z.number().int().nonnegative(),
+  remaining_count: z.number().int().nonnegative(),
 });
 export type PrFindings = z.infer<typeof PrFindings>;
 
 /** Caps for the eager list payload — the hover panel is a preview, not a browser. */
 export const FINDINGS_PREVIEW_LIMIT = 12;
-/**
- * Sized to the hover panel's 2-line clamp: ~356px of usable width at 12px
- * renders ~65 chars/line, so ~130 chars fill the clamp. The margin above that
- * keeps the CSS ellipsis — not this cut — the thing users see.
- */
-export const RATIONALE_PREVIEW_CHARS = 150;

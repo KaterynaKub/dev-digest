@@ -29,11 +29,11 @@ export const ReviewRecord = z.object({
   kind: z.enum(['summary', 'review']),
   verdict: Verdict.nullable(),
   summary: z.string().nullable(),
-  score: z.number().int().nullable(),
+  quality_score: z.number().int().nullable(),
   model: z.string().nullable(),
   grounding: z.string().nullish(),
-  created_at: z.string(),
-  findings: z.array(FindingRecord),
+  created_at: z.string().nullable(),
+  findings: z.array(FindingRecord).optional(),
 });
 export type ReviewRecord = z.infer<typeof ReviewRecord>;
 

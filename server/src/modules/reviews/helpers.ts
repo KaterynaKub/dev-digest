@@ -24,11 +24,11 @@ export interface ReviewDto {
   kind: 'summary' | 'review';
   verdict: string | null;
   summary: string | null;
-  score: number | null;
+  quality_score: number | null;
   model: string | null;
   grounding?: string | null;
-  created_at: string;
-  findings: ReviewDtoFinding[];
+  created_at: string | null;
+  findings?: ReviewDtoFinding[];
 }
 
 export function findingRowToDto(row: FindingRow): ReviewDtoFinding {
@@ -66,7 +66,7 @@ export function reviewToDto(
     kind: review.kind as 'summary' | 'review',
     verdict: review.verdict,
     summary: review.summary,
-    score: review.score,
+    quality_score: review.score,
     model: review.model,
     created_at: review.createdAt.toISOString(),
     findings: findings.map(findingRowToDto),

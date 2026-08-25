@@ -65,7 +65,7 @@ describe('buildPrFindings — what counts', () => {
     expect(out).toEqual({
       counts: { CRITICAL: 0, WARNING: 0, SUGGESTION: 0 },
       items: [],
-      truncated: 0,
+      remaining_count: 0,
     });
   });
 });
@@ -96,15 +96,15 @@ describe('buildPrFindings — ordering and the cap', () => {
     const out = buildPrFindings(rows);
     expect(out.counts.CRITICAL).toBe(FINDINGS_PREVIEW_LIMIT + 8); // chips stay truthful
     expect(out.items).toHaveLength(FINDINGS_PREVIEW_LIMIT);
-    expect(out.truncated).toBe(8);
+    expect(out.remaining_count).toBe(8);
   });
 
-  it('does not count dismissed findings toward `truncated`', () => {
+  it('does not count dismissed findings toward `remaining_count`', () => {
     const rows = [
       ...Array.from({ length: FINDINGS_PREVIEW_LIMIT }, (_, i) => row({ id: `f${i}` })),
       row({ id: 'gone', dismissedAt: new Date('2026-06-11T19:00:00Z') }),
     ];
-    expect(buildPrFindings(rows).truncated).toBe(0);
+    expect(buildPrFindings(rows).remaining_count).toBe(0);
   });
 });
 

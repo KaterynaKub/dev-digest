@@ -10,3 +10,7 @@ import { z } from 'zod';
  */
 export const IdParams = z.object({ id: z.string().uuid() });
 export type IdParams = z.infer<typeof IdParams>;
+
+/** Params for review-scoped routes, which name the id after the resource. */
+export const ReviewIdParams = z.object({ reviewId: z.string().uuid() });
+export type ReviewIdParams = z.infer<typeof ReviewIdParams>;
