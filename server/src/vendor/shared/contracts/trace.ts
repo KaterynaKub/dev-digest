@@ -63,6 +63,22 @@ export const MemoryPulled = z.object({
 });
 export type MemoryPulled = z.infer<typeof MemoryPulled>;
 
+/** Status of one attached project-context document at run time (AC-56). */
+export const ContextDocStatus = z.enum(['injected', 'truncated', 'dropped_budget', 'missing']);
+export type ContextDocStatus = z.infer<typeof ContextDocStatus>;
+
+/** One attached project-context document, as it was resolved for THIS run —
+ *  path, tokens measured in this run (AC-39), the outcome status (AC-56), and
+ *  where the attachment came from (AC-40). */
+export const ContextDocRead = z.object({
+  path: z.string(),
+  tokens: z.number().int(), // AC-39 — measured in this run, never cached
+  status: ContextDocStatus, // AC-56
+  origin: z.enum(['agent', 'skill']), // AC-40
+  skill_name: z.string().nullish(), // set when origin === 'skill'
+});
+export type ContextDocRead = z.infer<typeof ContextDocRead>;
+
 /**
  * How to read a cost figure. 'exact' = the provider billed it; 'estimated' =
  * price-book math; 'partial' = a LOWER BOUND (some steps had no price at all).
@@ -100,7 +116,19 @@ export const RunTrace = z.object({
   tool_calls: z.array(ToolCall),
   raw_output: z.string(),
   memory_pulled: z.array(MemoryPulled),
-  specs_read: z.array(z.string()),
+  // Attached project-context documents read for this run (0001b). A bare
+  // `string` is the form traces persisted BEFORE this field existed carried —
+  // no shape richer than a path. No server layer parses this field today
+  // (`run.repo.ts`'s read is a raw `row.trace as RunTrace` cast, and
+  // `hooks/trace.ts` on the client casts too), so old rows are never migrated
+  // and the union must stay forever, not just as a transitional shim. Any
+  // reader (client render, this file's own future consumers) MUST branch on
+  // `typeof entry === 'string'` before touching `.path`/`.status`/etc.
+  specs_read: z.array(z.union([z.string(), ContextDocRead])),
+  // Set only when the project-context reader failed OUTRIGHT for this run
+  // (NFR-6) — distinct from a per-document `status: 'missing'` in `specs_read`,
+  // which means one document didn't resolve while the reader itself succeeded.
+  specs_reader_error: z.string().nullish(),
   log: z.array(RunLogLine),
 });
 export type RunTrace = z.infer<typeof RunTrace>;

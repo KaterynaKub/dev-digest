@@ -3,6 +3,7 @@ import {
   FEATURE_MODELS,
   FeatureModelChoice,
   IntentLinkAllowlist,
+  ContextRoots,
   type FeatureModelId,
 } from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
@@ -72,4 +73,36 @@ export async function readLinkAllowlist(container: Container, workspaceId: strin
   const settings = rowsToSettings(rows) as { intent_link_allowlist?: unknown };
   const parsed = IntentLinkAllowlist.safeParse(settings.intent_link_allowlist);
   return parsed.success ? parsed.data : [];
+}
+
+/**
+ * Mirrors `SettingsKnown.context_roots`'s own zod default — duplicated here
+ * (not imported from `modules/project-context/constants.ts`) because this
+ * function must fail open to a value even before that module exists to
+ * define one; `project-context` re-exports/reuses this same array.
+ */
+export const DEFAULT_CONTEXT_ROOTS = ['specs/', 'docs/', 'insights/'];
+
+/**
+ * The workspace's `context_roots`, read on every call (AC-45 — no caching, so
+ * a settings edit takes effect on the next request). Unlike
+ * `readLinkAllowlist`'s fail-CLOSED (empty array), this fails OPEN into
+ * `DEFAULT_CONTEXT_ROOTS` (AC-46): an unset or corrupted value must still let
+ * listing work, not silently return zero roots. When a stored value exists
+ * but fails validation, `rejected: true` is set so `routes.ts` can log a
+ * warning (AC-54) — this function has no logger of its own.
+ */
+export async function readContextRoots(
+  container: Container,
+  workspaceId: string,
+): Promise<{ roots: string[]; rejected: boolean }> {
+  const rows = await container.db
+    .select({ key: t.settings.key, value: t.settings.value })
+    .from(t.settings)
+    .where(eq(t.settings.workspaceId, workspaceId));
+  const settings = rowsToSettings(rows) as { context_roots?: unknown };
+  const parsed = ContextRoots.safeParse(settings.context_roots);
+  if (parsed.success) return { roots: parsed.data, rejected: false };
+  const rejected = settings.context_roots !== undefined;
+  return { roots: DEFAULT_CONTEXT_ROOTS, rejected };
 }

@@ -10,7 +10,7 @@
   "conflicts": {
     "title": "Where agents disagree",
     "onlyConflicts": "Show only conflicts",
-    "empty": "No conflicts — the agents agree on every flagged location.",
+    "empty": "No conflicts вЂ” the agents agree on every flagged location.",
     "didNotFlag": "did not flag"
   },
   "tabs": {
@@ -34,7 +34,18 @@
       "memoryPulled": "Memory pulled",
       "specsRead": "Specs read",
       "items": "{count, plural, one {# item} other {# items}}",
-      "none": "none"
+      "none": "none",
+      "specTokens": "≈ {count} tokens",
+      "specTokensTitle": "Estimated with the cl100k_base encoding, measured for THIS run — the actual count depends on the provider, and this figure may differ from the estimate shown in an editor at any other time.",
+      "specStatus": {
+        "injected": "injected",
+        "truncated": "truncated",
+        "dropped_budget": "dropped for budget",
+        "missing": "missing"
+      },
+      "specOriginAgent": "agent",
+      "specOriginSkill": "via {skill}",
+      "specsReaderError": "Project-context reader failed: {reason}"
     },
     "stat": {
       "duration": "DURATION",
@@ -46,14 +57,14 @@
       "system": "System",
       "skills": "Skills (dynamic)",
       "memory": "Memory (dynamic)",
-      "repoMap": "Repo skeleton — repo-intel (dynamic)",
+      "repoMap": "Repo skeleton вЂ” repo-intel (dynamic)",
       "specs": "Project context (dynamic)",
-      "callers": "Callers of changed symbols — repo-intel (dynamic)",
+      "callers": "Callers of changed symbols вЂ” repo-intel (dynamic)",
       "user": "User / diff (dynamic)",
       "copy": "Copy",
       "fullscreen": "Open fullscreen",
-      "search": "Search in this block…",
-      "noMatches": "No matches for “{q}”."
+      "search": "Search in this blockвЂ¦",
+      "noMatches": "No matches for вЂњ{q}вЂќ."
     },
     "tools": {
       "args": "args",
@@ -62,15 +73,15 @@
     }
   },
   "drawer": {
-    "title": "Agent run · {agent}",
+    "title": "Agent run В· {agent}",
     "run": "Run",
     "pr": "PR #{number}",
     "running": "running",
     "completed": "completed",
     "copyRawOutput": "Copy raw output",
-  "copied": "Copied!",
-    "tracePending": "Trace is written when the run completes — see the Live log tab.",
-    "loadingTrace": "Loading trace…",
+    "copied": "Copied!",
+    "tracePending": "Trace is written when the run completes вЂ” see the Live log tab.",
+    "loadingTrace": "Loading traceвЂ¦",
     "noTrace": "No trace available yet."
   },
   "stats": {
@@ -110,14 +121,14 @@
     "title": "Multi-Agent Review",
     "subtitle": "this PR through every enabled agent in parallel",
     "selectPr": "Select PR",
-    "prItem": "#{number} · {title}",
+    "prItem": "#{number} В· {title}",
     "view": {
       "columns": "columns",
       "tabs": "tabs"
     },
     "runAll": "Run all agents",
-    "running": "Running…",
-    "meta": "{count} agents · fan-out via p-queue · {duration}s total · {cost}",
+    "running": "RunningвЂ¦",
+    "meta": "{count} agents В· fan-out via p-queue В· {duration}s total В· {cost}",
     "noAgents": {
       "title": "Enable agents to run reviews",
       "body": "Multi-agent review runs the PR through every enabled agent in parallel. You have no agents enabled yet.",

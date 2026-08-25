@@ -176,6 +176,10 @@ export const s = {
     whiteSpace: "normal",
     overflowWrap: "anywhere",
   } satisfies CSSProperties,
+  /* Documents a re-index would overwrite (AC-22) — one path per line so a long
+     list stays scannable rather than wrapping into a paragraph. */
+  dirtyList: { display: "flex", flexDirection: "column", gap: 4 } satisfies CSSProperties,
+  dirtyPath: { fontSize: 12, color: "var(--warn)", overflowWrap: "anywhere" } satisfies CSSProperties,
 } as const;
 
 /** Chevron rotates 90deg when open — same idiom as SmartDiffSection/styles.ts#chevronFor. */

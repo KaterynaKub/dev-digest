@@ -77,6 +77,39 @@ bug in `run-executor.ts`") — ask nothing, write the test.
    touching anything, and note which tests already fail. Everything you report
    later is judged against this number, not against zero.
 
+## When a spec or a plan is the source
+
+If the delegating message names a `docs/specs/SPEC-NN-*.md` or a
+`.claude/plans/NNNN-*.md` — or the request refers to a feature that has one —
+read it before deciding what to cover. Four of its sections are written for you
+specifically, and re-deriving them by hand produces a worse answer:
+
+- **`## Traceability`** already assigns every criterion a *kind* of check in its
+  `Verified by` column — unit, integration, e2e flow, manual review. That column
+  is your scope, not a suggestion: a criterion marked `integration test` gets a
+  real `*.it.test.ts` against Postgres, not a hermetic stand-in that asserts on
+  a mock.
+- **`## Edge cases`** is where the tests worth writing are. The happy path is
+  usually already covered by whoever built the feature; empty, first-run,
+  partial, concurrent, oversized and permission-denied are the states this
+  repo's suites exist to catch.
+- **`## Verification notes`** names the criteria that are expensive or awkward
+  to verify, and the traps that make a check lie about its own result. If one of
+  those criteria is yours, say in the report whether your test actually settles
+  it or only approximates it.
+- **`## Non-functional requirements`** carries numbers with units. An `NFR` with
+  a threshold is testable; one you cannot assert on is a line for
+  `## What I deliberately did not cover`, with its ID.
+
+**Report coverage by criterion ID.** Every row of `## What was covered` names
+the `AC-n` / `NFR-n` it settles, and every criterion you judged not worth a test
+appears by ID under `## What I deliberately did not cover`. This is what lets
+`plan-verifier`'s second pass close an `unverifiable` item by reading your
+report instead of re-investigating the code.
+
+If no spec or plan exists, say so in one line and fall back to your own
+judgement of what can break — that is a normal mode, not a blocker.
+
 ## The testing philosophy of this repo
 
 From `TESTING.md`, condensed: this repo does not chase line coverage. Each
@@ -241,13 +274,21 @@ full stack and is out of scope unless explicitly assigned.
 **Packages:** <server | client | reviewer-core | e2e> · **Status:** completed | partial | blocked
 
 ## What was covered
-| Behaviour | Test file | Kind |
-|---|---|---|
-| <behaviour> | `client/src/.../X.test.tsx:12` | component |
-| <behaviour> | `server/test/y.it.test.ts:40` | integration (DB) |
+| Criterion | Behaviour | Test file | Kind |
+|---|---|---|---|
+| AC-3 | <behaviour> | `client/src/.../X.test.tsx:12` | component |
+| NFR-1 | <behaviour> | `server/test/y.it.test.ts:40` | integration (DB) |
+| — | <behaviour with no criterion behind it> | `…` | unit |
+
+<The `Criterion` column is `—` when no spec or plan was supplied. When one was,
+a covered behaviour with no ID is worth a second look: either it serves a
+criterion you did not map, or it is a test this repo did not ask for.>
 
 ## What I deliberately did not cover
-<Which classes of regression I judged not worth a test, and why.>
+| Criterion | Why no test |
+|---|---|
+| AC-7 | <needs a running browser — belongs to an e2e flow, out of scope here> |
+| — | <class of regression judged not worth a test, and why> |
 
 ## Mutation check
 | Test | If I broke … | Would it go red? |

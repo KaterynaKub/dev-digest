@@ -34,6 +34,7 @@ import type {
   HttpFetcher,
   FetchedDocument,
   FetchFailure,
+  Tokenizer,
 } from '@devdigest/shared';
 import { parseUnifiedDiff } from './git/diff-parser.js';
 
@@ -258,6 +259,8 @@ export interface MockGitOptions {
   head?: string;
   /** Head `currentHead()` returns AFTER `sync()` runs — simulates fetch+reset advancing HEAD. */
   syncedHead?: string;
+  /** Paths `dirtyPaths()` returns before prefix-narrowing. */
+  dirty?: string[];
 }
 
 export class MockGitClient implements GitClient {
@@ -301,6 +304,42 @@ export class MockGitClient implements GitClient {
   }
   async readFile(_repo: RepoRef, path: string): Promise<string> {
     return this.opts.files?.[path] ?? '';
+  }
+  /** Keys of `opts.files` that fall under one of `opts.roots`, ext-filtered. */
+  async listFiles(
+    _repo: RepoRef,
+    opts: { roots: string[]; ext: string; excludeDirs: string[]; limit: number },
+  ): Promise<{ paths: string[]; truncated: boolean }> {
+    const files = this.opts.files ?? {};
+    const all = Object.keys(files)
+      .filter((p) => opts.roots.some((root) => p.startsWith(root)))
+      .filter((p) => p.toLowerCase().endsWith(opts.ext.toLowerCase()))
+      .sort();
+    const truncated = all.length > opts.limit;
+    return { paths: truncated ? all.slice(0, opts.limit) : all, truncated };
+  }
+  async dirtyPaths(_repo: RepoRef, prefixes: string[]): Promise<string[]> {
+    const dirty = this.opts.dirty ?? [];
+    if (prefixes.length === 0) return dirty;
+    return dirty.filter((p) => prefixes.some((prefix) => p.startsWith(prefix)));
+  }
+  async writeFile(_repo: RepoRef, path: string, content: string): Promise<void> {
+    this.opts.files ??= {};
+    this.opts.files[path] = content;
+  }
+}
+
+// ---------- Mock Tokenizer ----------
+/**
+ * Deterministic `ceil(len/4)` counter — tests should not pay for the real
+ * adapter's lazy BPE init. `approximate` defaults to `false` so tests exercise
+ * the "exact" path unless a case explicitly wants to assert fallback behaviour.
+ */
+export class MockTokenizer implements Tokenizer {
+  constructor(public approximate = false) {}
+
+  count(text: string): number {
+    return Math.ceil(text.length / 4);
   }
 }
 

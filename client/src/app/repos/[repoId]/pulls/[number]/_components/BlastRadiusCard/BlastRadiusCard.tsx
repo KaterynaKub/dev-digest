@@ -16,9 +16,10 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Badge, Icon, SectionLabel, Skeleton, Button, ErrorState } from "@devdigest/ui";
+import { Badge, Icon, SectionLabel, Skeleton, Button, ErrorState, Modal } from "@devdigest/ui";
 import { useBlast } from "@/lib/hooks/reviews";
 import { useResyncRepoIntel } from "@/lib/hooks/repo-intel";
+import { useDirtyContextDocs } from "@/lib/hooks/project-context";
 import type { DownstreamImpact } from "@devdigest/shared";
 import { BlastGraph } from "./_components/BlastGraph";
 import { DEGRADED_INDEX_STATUSES } from "./constants";
@@ -52,6 +53,23 @@ export function BlastRadiusCard({ prId, repoId, onGoToLocation }: BlastRadiusCar
   const { data, isLoading, isError, refetch } = useBlast(prId);
   const resync = useResyncRepoIntel(repoId);
   const [view, setView] = React.useState<ViewMode>("tree");
+  /* AC-22/AC-53 — re-indexing calls `sync()`, which is `git reset --hard`, so
+     it destroys uncommitted edits to project-context documents in the clone.
+     The user must see WHICH documents are at stake and confirm before the
+     mutation fires. The server already scopes this list to `*.md` under the
+     configured roots (AC-66) — never re-filter or widen it here. */
+  const tContext = useTranslations("context");
+  const dirty = useDirtyContextDocs(repoId);
+  const [confirmingResync, setConfirmingResync] = React.useState(false);
+  const dirtyPaths = dirty.data?.paths ?? [];
+
+  const requestResync = () => {
+    if (dirtyPaths.length > 0) {
+      setConfirmingResync(true);
+      return;
+    }
+    resync.mutate();
+  };
   const [openSymbols, setOpenSymbols] = React.useState<Record<string, boolean>>({});
 
   const toggleSymbol = (symbol: string) =>
@@ -124,7 +142,7 @@ export function BlastRadiusCard({ prId, repoId, onGoToLocation }: BlastRadiusCar
               icon="RefreshCw"
               loading={resync.isPending}
               disabled={!repoId}
-              onClick={() => resync.mutate()}
+              onClick={requestResync}
             >
               {resync.isPending ? t("degraded.resyncing") : t("degraded.resync")}
             </Button>
@@ -205,6 +223,41 @@ export function BlastRadiusCard({ prId, repoId, onGoToLocation }: BlastRadiusCar
 
       {!isDegraded && data.downstream.length > 0 && view === "graph" && (
         <BlastGraph downstream={data.downstream} />
+      )}
+
+      {confirmingResync && (
+        <Modal
+          width={560}
+          title={tContext("resyncWarning.title")}
+          subtitle={tContext("resyncWarning.body")}
+          onClose={() => setConfirmingResync(false)}
+          footer={
+            <>
+              <Button kind="ghost" size="sm" onClick={() => setConfirmingResync(false)}>
+                {tContext("resyncWarning.cancel")}
+              </Button>
+              <Button
+                kind="primary"
+                size="sm"
+                loading={resync.isPending}
+                onClick={() => {
+                  setConfirmingResync(false);
+                  resync.mutate();
+                }}
+              >
+                {tContext("resyncWarning.confirm")}
+              </Button>
+            </>
+          }
+        >
+          <div style={s.dirtyList}>
+            {dirtyPaths.map((p) => (
+              <span key={p} className="mono" style={s.dirtyPath}>
+                {p}
+              </span>
+            ))}
+          </div>
+        </Modal>
       )}
     </div>
   );

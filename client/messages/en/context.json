@@ -1,24 +1,60 @@
 {
-  "title": "Project Context",
-  "chunks": "{count} chunks",
-  "reindex": "Re-index",
-  "indexing": "Indexing…",
-  "resync": "Resync",
-  "resyncing": "Resyncing…",
-  "indexStatus": "Index status: {status}",
-  "loadError": "Couldn’t load specs",
-  "kb": "{kb}kb",
+  "loadError": "Couldn’t load the repository’s content right now.",
+  "usedByAgents": "{count, plural, one {Used by # agent} other {Used by # agents}}",
+  "notCloned": {
+    "title": "Repository not cloned yet",
+    "body": "This repository has no local clone. Add or sync it before its documents can be listed here."
+  },
   "empty": {
-    "title": "No spec files yet",
-    "body": "Drop your PRDs, tech specs, and acceptance criteria under .devdigest/specs/. Every agent and the PR brief read them as grounding context."
+    "title": "No documents found",
+    "body": "No markdown files were found under the configured context roots ({roots})."
+  },
+  "status": {
+    "notCloned": "Repository not cloned",
+    "pending": "{count, plural, one {# document} other {# documents}} · estimating tokens…",
+    "emptySum": "{count, plural, one {# document} other {# documents}} · ≈ 0 tokens",
+    "summary": "{count, plural, one {# document} other {# documents}} · ≈ {tokens, plural, one {# token} other {# tokens}}",
+    "fallbackUsed": "Includes at least one character-based estimate — the cl100k_base tokenizer was unavailable for that document.",
+    "truncated": "Listing truncated to the first 1,000 matching documents; the token sum covers only what is shown."
   },
   "mode": {
-    "preview": "preview",
-    "edit": "edit"
+    "preview": "Preview",
+    "edit": "Edit"
   },
   "editor": {
-    "loadError": "Couldn’t load spec",
+    "loading": "Loading document…",
+    "loadError": "Couldn’t load this document.",
     "save": "Save",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "saveFailed": "Couldn’t save this document.",
+    "savedToast": "Saved to the local clone",
+    "uncommitted": "Uncommitted — this change exists only in the local clone and is lost on the next resync."
+  },
+  "tab": {
+    "title": "Project context",
+    "attachedCount": "{linked} of {total} attached",
+    "filterPlaceholder": "Filter documents…",
+    "orderHintAgent": "Order matters — earlier documents appear earlier in the assembled ## Project context block. Toggle to attach.",
+    "orderHintSkill": "Any agent using this skill inherits these documents. Order matters — earlier documents appear earlier in the assembled block.",
+    "moveUp": "Move {path} up",
+    "moveDown": "Move {path} down",
+    "missing": "missing",
+    "preview": "Preview",
+    "previewLoading": "Loading document preview…",
+    "previewError": "Couldn’t load this document.",
+    "noneAvailable": "No documents match this filter.",
+    "limitReached": "Up to {max} documents can be attached. Detach one before adding another.",
+    "saving": "Saving…",
+    "tokensLoading": "Estimating tokens…",
+    "tokensSum": "{marker} {count, plural, one {# token} other {# tokens}}",
+    "injectedHintAgent": "Injected as an untrusted block (## Project context) into every run.",
+    "injectedHintSkill": "Injected as an untrusted block (## Project context) into every run using this skill."
+  },
+  "resyncWarning": {
+    "title": "Uncommitted document edits will be lost",
+    "body": "Re-indexing runs `git reset --hard` on the local clone. These project-context documents have edits that exist only in that clone, and they will be overwritten:",
+    "confirm": "Re-index and discard",
+    "cancel": "Cancel",
+    "checking": "Checking for uncommitted edits…"
   }
 }

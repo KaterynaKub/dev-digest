@@ -7,7 +7,8 @@ import { useTranslations } from "next-intl";
 import { Badge } from "@devdigest/ui";
 import type { RunTrace, FindingRecord } from "@devdigest/shared";
 import { PROMPT_COLORS } from "../../constants";
-import { formatSeconds, formatTokens } from "../../helpers";
+import { formatSeconds, formatTokens, normalizeSpecsRead } from "../../helpers";
+import { SPEC_STATUS_COLORS } from "../../constants";
 import { s } from "../../styles";
 import { TraceSection } from "../TraceSection";
 import { ToolCallRow } from "../ToolCallRow";
@@ -19,6 +20,8 @@ import { RunCostBadge } from "@/components/run-cost-badge";
 export function TraceBody({ trace, findings }: { trace: RunTrace; findings: FindingRecord[] }) {
   const t = useTranslations("runs");
   const stats = trace.stats;
+  // Flattens both persisted `specs_read` shapes — see `normalizeSpecsRead`.
+  const specsRead = normalizeSpecsRead(trace.specs_read);
   return (
     <>
       <TraceSection icon="Settings" title={t("trace.configuration")}>
@@ -38,17 +41,47 @@ export function TraceBody({ trace, findings }: { trace: RunTrace; findings: Find
           </Row>
           <Row label={t("trace.config.specsRead")}>
             <div style={s.specsWrap}>
-              {trace.specs_read.length === 0 ? (
+              {specsRead.length === 0 ? (
                 <span style={s.specsNone}>{t("trace.config.none")}</span>
               ) : (
-                trace.specs_read.map((sp, i) => (
-                  <span key={i} className="mono" style={s.spec}>
-                    {sp}
+                specsRead.map((sp, i) => (
+                  <span key={i} style={s.specRow}>
+                    <span className="mono" style={s.spec}>
+                      {sp.path}
+                    </span>
+                    {/* A legacy trace recorded only the path — render it bare
+                        rather than inventing "unknown" badges for facts that
+                        run never captured. */}
+                    {sp.status != null && (
+                      <Badge color={SPEC_STATUS_COLORS[sp.status]}>
+                        {t(`trace.config.specStatus.${sp.status}`)}
+                      </Badge>
+                    )}
+                    {sp.tokens != null && (
+                      <span style={s.specMeta} title={t("trace.config.specTokensTitle")}>
+                        {t("trace.config.specTokens", { count: sp.tokens })}
+                      </span>
+                    )}
+                    {sp.origin != null && (
+                      <span style={s.specMeta}>
+                        {sp.origin === "skill" && sp.skillName
+                          ? t("trace.config.specOriginSkill", { skill: sp.skillName })
+                          : t("trace.config.specOriginAgent")}
+                      </span>
+                    )}
                   </span>
                 ))
               )}
             </div>
           </Row>
+          {/* NFR-6 — the reader failed wholly; the run still completed. */}
+          {trace.specs_reader_error != null && (
+            <Row label={t("trace.config.specsRead")}>
+              <span style={s.specReaderError}>
+                {t("trace.config.specsReaderError", { reason: trace.specs_reader_error })}
+              </span>
+            </Row>
+          )}
         </div>
       </TraceSection>
 

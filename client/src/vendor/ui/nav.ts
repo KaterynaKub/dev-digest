@@ -27,6 +27,12 @@ export const NAV: NavGroup[] = [
     section: "WORKSPACE",
     items: [
       { key: "pulls", label: "Pull Requests", icon: "GitPullRequest", href: "/repos/:repoId/pulls", gKey: "p" },
+      // No gKey: SHORTCUTS has no free single-letter chord left under `g `,
+      // and reusing one would silently steal it from the item that already
+      // owns it (see this file's own SHORTCUTS list).
+      // key is `context`, matching the pre-existing `shell.nav.context` message
+      // key — the sidebar resolves labels by `key`, not by the `label` field.
+      { key: "context", label: "Project Context", icon: "FileText", href: "/repos/:repoId/project-context" },
     ],
   },
   {

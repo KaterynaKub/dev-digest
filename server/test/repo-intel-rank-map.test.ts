@@ -11,7 +11,7 @@ import type { Tokenizer } from '../src/adapters/tokenizer/index.js';
 import type { RepoMapCandidateRow } from '../src/modules/repo-intel/repository.js';
 
 /** Deterministic char-count tokenizer so budgets are exact in tests. */
-const charTokenizer: Tokenizer = { count: (t) => t.length };
+const charTokenizer: Tokenizer = { count: (t) => t.length, approximate: false };
 
 describe('computeFileRank (Option B: rank = pagerank, hotness = 0)', () => {
   it('returns [] for no files', () => {

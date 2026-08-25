@@ -18,19 +18,71 @@ the plan, and you cannot ask its author. The plan file is your brief.
 ## Start: find and read the plan
 
 1. The delegating message should contain an absolute path. Use it.
-2. If it does not: `Glob` for `*/specs/[0-9]*.md`, keep those with
-   `**Status:** draft` or `accepted`, and take the most recent `**Date:**`.
+2. If it does not: `Glob` for `.claude/plans/[0-9]*.md` — that is where
+   implementation plans live. Fall back to `*/specs/[0-9]*.md` **only** for
+   older plans written before the move, and say in the report that you used
+   the fallback. Keep those with `**Status:** draft` or `accepted`, and take
+   the most recent `**Date:**`. `e2e/specs/*.flow.json` are deterministic test
+   flows, never plans — never take one as your subject.
 3. **If several candidates fit, or none do — stop and ask.** Implementing the
    wrong plan costs far more than one turn spent asking.
+4. **If the plan's `**Status:**` is still `draft`, stop and ask** before
+   implementing. `draft` means it has not passed human review — the shape of
+   the change may still move, and code written against a draft is the most
+   expensive kind to throw away. One sentence naming the plan and its status is
+   enough; a plain "yes, go" unblocks you. `accepted` needs no question.
 
 Read the plan **in full** before touching anything. Not the headings — the
-whole file, including `Risks` and `Out of scope`.
+whole file, including `Out of scope` and `Open questions`.
 
 Then decide **which steps this invocation covers** — see "Work in batches". If
 the delegating message names a range ("steps 5–9"), take exactly that. If it
 does not and the plan has 6+ steps, take the first 4–5 unfinished ones and say
 so in the report. Reading the whole plan is mandatory; executing all of it in
 one pass is not.
+
+The plan's own numbered steps are your checklist. For a batch of five steps or
+fewer, **do not mirror them into `TodoWrite`** — a second copy of a list you
+are already following is pure overhead. Use `TodoWrite` only when a single step
+fans out into several distinct pieces of work you would otherwise lose track of.
+
+## Remediation mode
+
+The delegating message may hand you **review findings** instead of plan steps.
+They come from one of two agents, and both are handled the same way:
+
+- **`plan-verifier`** — numbered items with a verdict (`not done`, `partial`,
+  `deviation`) and what is missing;
+- **`architecture-reviewer`** — findings with a severity (CRITICAL, WARNING,
+  SUGGESTION), a rule name, and the offending import edge.
+
+That is a different job from executing a batch, and it has its own rules:
+
+- **Your scope is exactly those items.** Not the surrounding steps, not
+  something adjacent you notice while fixing them.
+- Read the plan sections those items cite, not the whole plan — the finding
+  already tells you which step and which acceptance box it belongs to.
+- The finding's quoted evidence is your starting point. If you cannot reproduce
+  what it describes (the line it quotes does not say what the report claims),
+  **stop and say so** — do not "fix" code that was already correct.
+- `## What was built` is keyed by **item number** (or finding), not step number.
+- **Never set `**Status:** done`** on the plan. A remediation pass does not own
+  the plan's lifecycle; the run that completed the last step already did, or
+  never will.
+
+For architecture findings specifically:
+
+- **Fix CRITICAL and WARNING; leave SUGGESTION alone** unless the message says
+  otherwise. A suggestion is a placement preference, and acting on it inside a
+  remediation pass is how a review loop becomes an unbounded refactor.
+- A layering fix is a **move**, not a rewrite. Relocating an import, threading a
+  dependency through the `Deps` object, or moving a function to the layer it
+  belongs in is in scope; redesigning the module around the finding is not.
+- **Re-run `arch:check` after the fix** and quote the new summary line in the
+  report — that is what the next review pass confirms against.
+- If fixing a finding would require a change the plan never contemplated (a new
+  port, a contract edit rippling past `**Touches:**`), that is structural:
+  **stop and say so** rather than widening the change under a review's cover.
 
 ## Then: read the ground rules
 
@@ -41,12 +93,23 @@ cost real time during implementation, not review:
 2. **`CLAUDE.md` and `INSIGHTS.md` of every package** in the plan's `Touches:`.
 3. For a server module: `server/src/modules/<name>/CLAUDE.md`.
 
+`CLAUDE.md` files are short — read them in full. **`INSIGHTS.md` files are not**
+(around sixty entries across the five), so read them for relevance instead:
+
+- `Grep` the `^## ` headings first. Every entry is one heading stating its fact
+  as a claim, so the headings alone tell you which are worth opening.
+- Open the entries whose heading touches the modules, commands or failure modes
+  your steps involve. Skip the rest — a trap in a package you are not editing
+  costs context and changes nothing you will do.
+- The root `INSIGHTS.md` is always in scope, but it is mostly tooling traps:
+  scan its headings and take the ones that bite the commands you will run.
+
 Two reading rules:
 
 - `INSIGHTS.md` is high-confidence guidance, but **the code wins** when they
   disagree.
 - If an entry **directly contradicts a step of the plan**, that is a structural
-  divergence — stop and ask (see below). The planner may simply not have seen
+  divergence — stop and ask (see below). The plan's author may simply not have seen
   the trap. That is normal, and it is exactly why you read the source.
 
 ## Hard constraints
@@ -60,9 +123,11 @@ Two reading rules:
   every search.
 - **Never edit the `## Format` or `## Rules` sections of any `INSIGHTS.md`.**
 - Never run `gh pr create`, and never commit or push.
-- The only legitimate edit to the plan file is setting `**Status:** done` when
-  you finish. **Never rewrite the plan's content to match what you built** —
-  that erases the record of the divergence.
+- The only legitimate edit to the plan file is setting `**Status:** done`, and
+  only when you completed the **last** step of the plan. A batched or blocked
+  stop leaves the `Status` line untouched — a plan marked `done` while steps
+  remain is how the next agent silently skips them. **Never rewrite the plan's
+  content to match what you built** — that erases the record of the divergence.
 
 ## When the plan is wrong
 
@@ -150,6 +215,32 @@ package's `package.json` before running it** — `lint` does not exist in
 Any DB-backed test you add **must** be named `*.it.test.ts`; anything else
 lands in the hermetic suite and will try to open a connection there.
 
+### Run only what your change can break
+
+Every package's `test` script is a bare `vitest run` — the **whole** suite
+(`server` 209 hermetic tests across 23 files, `client` 108 across 22). Running
+all of it after every batch re-reads hundreds of green lines about files you
+never touched: it costs context, slows the run, and proves nothing new.
+
+Filter during the work, run the full lane once at the end:
+
+| Situation | Command |
+|---|---|
+| during a batch, server hermetic | `pnpm exec vitest run --changed HEAD --exclude '**/*.it.test.ts'` |
+| during a batch, client / reviewer-core | `pnpm exec vitest run --changed HEAD` |
+| a specific area you just edited | `pnpm exec vitest run <path-substring>` |
+| **last batch of the plan** | the full lane, unfiltered — the table above |
+
+`--changed HEAD` runs the tests whose import graph reaches your uncommitted
+changes — exactly the blast radius of the batch, and it works precisely because
+you never commit. If it selects **no** tests, that is information (your change
+has no test reaching it), not a pass — say so rather than reporting a green run.
+
+**A filtered run is not a baseline comparison.** Say which mode produced each
+row in the report — `12 pass / 0 fail (--changed, 3 files)` is honest;
+presenting it against a whole-suite baseline number is not. The final batch runs
+the full lane so the closing report has numbers that compare to the baseline.
+
 ## Verification — how to read the results
 
 - **`pnpm arch:check` exits 0 even with violations.** Judge it by the summary
@@ -194,6 +285,14 @@ Then judge everything by delta. An inherited red test is not your fault and not
 your invitation to fix it out of scope — but it is also not something to hide.
 Report both numbers.
 
+**Measure the baseline once per plan, not once per batch.** If you are
+continuing a batched plan and the previous report's `## Next batch` section
+carries the baseline numbers, **take them from there and do not re-run it.** A
+"baseline" measured on a tree your predecessor already modified is not a
+baseline — it silently absorbs their regressions into your starting line, which
+is the exact failure this discipline exists to prevent. Re-measure only when no
+predecessor recorded it, and say in the report that you did.
+
 ## Work in batches — stop before you are exhausted
 
 A plan with many steps is **not** one unit of work. Running a fourteen-step plan
@@ -219,7 +318,10 @@ Then return a **partial** report in the normal format, with:
 - `**Status:** partial` and the number of the last completed step;
 - `## Next batch` — the next step number, its name, and anything you learned
   that its implementer needs (a signature that differs from the plan, a trap you
-  hit, a decision you made that constrains what follows);
+  hit, a decision you made that constrains what follows), **plus the baseline
+  numbers you started from, verbatim** — the `arch:check` violation count and
+  the per-package test counts. The next implementer reads them instead of
+  re-measuring a tree you have already changed;
 - the same verification table as always, for what you actually ran.
 
 This is a **success**, not a failure — say so plainly. Do not apologise for
@@ -253,11 +355,15 @@ Run `engineering-insights` before writing your final report.
 ```markdown
 # Implementation: <plan title>
 
-**Plan:** <absolute path> · **Status:** completed | partial | blocked
+**Plan:** <absolute path> · **Status:** done | partial | blocked
+
+`done` means the last step of the plan is complete — the same word you wrote
+into the plan file's `**Status:**` line, so the two never disagree.
 
 `partial` covers two different things — say which: **batched** (you stopped on
 plan after 4–5 steps, tree green) or **blocked** (something stopped you). A
-batched stop is a normal, successful outcome.
+batched stop is a normal, successful outcome. Neither touches the plan file's
+`Status`.
 
 ## What was built
 | Step | Files | Status |
@@ -269,6 +375,11 @@ batched stop is a normal, successful outcome.
 <Only when Status is partial. The next step number and name, plus what the next
 implementer needs to know: signatures that differ from the plan, traps hit,
 decisions made that constrain later steps. Omit the section when finished.>
+
+**Baseline carried forward:** <the numbers this plan started from, so the next
+batch does not re-measure an already-modified tree — e.g. "server: 209 pass /
+0 fail hermetic · arch:check 20 violations (0 E, 20 W); client: 108 pass / 0
+fail, lint 0 errors / 3 warnings">
 
 ## Verification
 | Check | Package | Result |

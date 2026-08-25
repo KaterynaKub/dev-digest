@@ -63,7 +63,16 @@ export interface PromptParts {
   skills?: string[];
   /** Relevant memory items (trusted, curated). */
   memory?: string[];
-  /** Project-context spec chunks (untrusted content). */
+  /**
+   * Attached project-context documents, as RAW text. Supplied by the server's
+   * `run-executor.ts#buildProjectContext` (agent attachments first, then those
+   * inherited from enabled linked skills, deduplicated by path).
+   *
+   * Unlike `skills` and `intent`, which arrive already delimiter-wrapped, each
+   * element here is wrapped by `assemblePrompt` itself via
+   * `wrapUntrusted('spec-N', …)` below. Callers must NOT pre-wrap — that would
+   * nest the delimiters twice and misrepresent the injected text in the trace.
+   */
   specs?: string[];
   /**
    * Repo skeleton / map (T3): top-ranked symbols by signature, token-budgeted.

@@ -8,8 +8,9 @@ export interface EditorTab {
 }
 
 /** Editor tabs. Part-0 shipped Config only; Skills is added by the Skills
-    feature (later lessons add Evals/Stats/CI). */
+    feature; Context by Project Context (later lessons add Evals/Stats/CI). */
 export const TABS: readonly EditorTab[] = [
   { key: "config", labelKey: "editor.tabs.config", icon: "Settings" },
   { key: "skills", labelKey: "editor.tabs.skills", icon: "Sparkles" },
+  { key: "context", labelKey: "editor.tabs.context", icon: "FileText" },
 ];

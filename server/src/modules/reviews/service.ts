@@ -55,6 +55,8 @@ export function reviewDeps(container: {
   reviewRepo: ReviewRepository;
   agentsRepo: AgentsRepository;
   skillsRepo: SkillsRepository;
+  contextRepo: ReviewRunDeps['contextRepo'];
+  tokenizer: ReviewRunDeps['tokenizer'];
   git: ReviewRunDeps['git'];
   runBus: RunBus;
   repoIntel: ReviewRunDeps['repoIntel'];
@@ -78,6 +80,8 @@ export function reviewDeps(container: {
     repo: container.reviewRepo,
     agentsRepo: container.agentsRepo,
     skillsRepo: container.skillsRepo,
+    contextRepo: container.contextRepo,
+    tokenizer: container.tokenizer,
     git: container.git,
     runBus: container.runBus,
     repoIntel: container.repoIntel,

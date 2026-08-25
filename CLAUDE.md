@@ -25,7 +25,7 @@ high-confidence guidance unless the code proves it stale.
 
 ## Known state (update when it changes)
 
-Baseline as of 2026-08-06 — distinguish pre-existing breakage from your own
+Baseline as of 2026-08-24 — distinguish pre-existing breakage from your own
 regression, and judge every check by the delta rather than by exit code.
 
 - `server` typecheck: **2 pre-existing errors** — `src/db/migrate.ts:38` and
@@ -35,7 +35,7 @@ regression, and judge every check by the delta rather than by exit code.
   `db/schema.ts`, `agents/helpers.ts ↔ repository.ts` cycle, `repos/helpers.ts`
   → `db/schema.ts`). `arch:check` **exits 0 even with violations** — judge it by
   the summary line `x N dependency violations (E errors, W warnings)`.
-- Test counts: `server` 209 hermetic (23 files) · `client` 108 (22 files) ·
+- Test counts: `server` 417 hermetic (36 files) · `client` 208 (30 files) ·
   `reviewer-core` 34 (4 files).
 - `client` lint: 0 errors, 3 pre-existing warnings.
 - No `lint` script in `server/`; no `arch:check` in `client/`.

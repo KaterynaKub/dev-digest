@@ -11,6 +11,16 @@ export const TABS = ["trace", "log"] as const;
 export type TraceTab = (typeof TABS)[number];
 
 /** Prompt-assembly block accent colours (by leg). */
+/* Per-run outcome of one attached project-context document (AC-56). Only
+   `injected` means the document actually reached the prompt; the other three
+   are degradations the trace must not hide behind an identical-looking path. */
+export const SPEC_STATUS_COLORS = {
+  injected: "var(--ok)",
+  truncated: "var(--warn)",
+  dropped_budget: "var(--warn)",
+  missing: "var(--danger)",
+} as const;
+
 export const PROMPT_COLORS = {
   system: "var(--text-muted)",
   skills: "var(--accent)",

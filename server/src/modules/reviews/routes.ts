@@ -24,6 +24,8 @@ export function buildReviewDeps(container: Container): ReviewDeps {
     reviewRepo: container.reviewRepo,
     agentsRepo: container.agentsRepo,
     skillsRepo: container.skillsRepo,
+    contextRepo: container.projectContextRepo,
+    tokenizer: container.tokenizer,
     git: container.git,
     runBus: container.runBus,
     repoIntel: container.repoIntel,

@@ -1,0 +1,62 @@
+{
+  "name": "Project Context page and the agent editor's Context tab render",
+  "description": "Reaches Project Context through the sidebar (the repo id is resolved by the app, not hardcoded — the seeded stack has exactly one repo, acme/payments-api) and confirms the page renders one of its DEFINED states rather than a blank pane. Then opens an agent and switches to its Context tab to confirm the attachment surface renders with its 'attached' counter. Exercises the Project Context route, ProjectContextView's not-cloned state, and the shared ContextTab. Read-only seeded data: the seeded repo has no clone on disk, so the not-cloned state (AC-6/NFR-7) is the deterministic outcome here — a populated listing needs a real clone and is covered in the integration lane instead. Deliberately does NOT attach a document or start a review: this package's flows stay read-only and LLM-free.",
+  "steps": [
+    {
+      "cmd": ["open", "{BASE}/"],
+      "label": "load the app root"
+    },
+    {
+      "cmd": ["wait", "--url", "/pulls"],
+      "label": "land on the seeded repo's PR list"
+    },
+    {
+      "cmd": ["wait", "--load", "networkidle"],
+      "label": "shell and repo context settle"
+    },
+    {
+      "cmd": ["find", "text", "Project Context", "click"],
+      "label": "open Project Context from the sidebar"
+    },
+    {
+      "cmd": ["wait", "--url", "/project-context"],
+      "label": "project-context route reached"
+    },
+    {
+      "cmd": ["wait", "--load", "networkidle"],
+      "label": "document listing fetch settles"
+    },
+    {
+      "cmd": ["wait", "--text", "Repository not cloned yet"],
+      "label": "the not-cloned state renders as its own state, never as an empty list (AC-6, NFR-7)"
+    },
+    {
+      "cmd": ["open", "{BASE}/agents"],
+      "label": "load the agents list"
+    },
+    {
+      "cmd": ["wait", "--load", "networkidle"],
+      "label": "agents fetch settles"
+    },
+    {
+      "cmd": ["wait", "--text", "Test Quality Reviewer"],
+      "label": "seeded agent card is visible"
+    },
+    {
+      "cmd": ["find", "text", "Test Quality Reviewer", "click"],
+      "label": "open the agent editor"
+    },
+    {
+      "cmd": ["wait", "--load", "networkidle"],
+      "label": "agent editor settles"
+    },
+    {
+      "cmd": ["find", "text", "Context", "click"],
+      "label": "switch to the agent's Context tab"
+    },
+    {
+      "cmd": ["wait", "--text", "attached"],
+      "label": "the attachment counter renders (AC-13)"
+    }
+  ]
+}

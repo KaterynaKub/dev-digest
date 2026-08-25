@@ -97,6 +97,10 @@ export const s = {
   specsWrap: { display: "flex", gap: 6, flexWrap: "wrap" } satisfies CSSProperties,
   specsNone: { color: "var(--text-muted)" } satisfies CSSProperties,
   spec: { fontSize: 12, color: "var(--text-secondary)" } satisfies CSSProperties,
+  /* One `specs_read` entry: path plus its per-run badges on a single line. */
+  specRow: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" } satisfies CSSProperties,
+  specMeta: { fontSize: 11, color: "var(--text-muted)" } satisfies CSSProperties,
+  specReaderError: { fontSize: 12, color: "var(--danger)" } satisfies CSSProperties,
   statsRow: { display: "flex", gap: 10 } satisfies CSSProperties,
   rawPre: {
     margin: 0,

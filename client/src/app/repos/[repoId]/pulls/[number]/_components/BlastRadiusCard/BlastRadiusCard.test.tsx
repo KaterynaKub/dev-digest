@@ -1,12 +1,14 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BlastRadius } from "@devdigest/shared";
 import messages from "../../../../../../../../messages/en/blast.json";
+import contextMessages from "../../../../../../../../messages/en/context.json";
 import { BlastRadiusCard } from "./BlastRadiusCard";
 import { useBlast } from "@/lib/hooks/reviews";
 import { useResyncRepoIntel } from "@/lib/hooks/repo-intel";
+import { useDirtyContextDocs } from "@/lib/hooks/project-context";
 
 vi.mock("@/lib/hooks/reviews", () => ({
   useBlast: vi.fn(),
@@ -14,11 +16,20 @@ vi.mock("@/lib/hooks/reviews", () => ({
 vi.mock("@/lib/hooks/repo-intel", () => ({
   useResyncRepoIntel: vi.fn(),
 }));
+vi.mock("@/lib/hooks/project-context", () => ({
+  useDirtyContextDocs: vi.fn(),
+}));
 
 afterEach(cleanup);
 
 const mockedUseBlast = vi.mocked(useBlast);
 const mockedUseResync = vi.mocked(useResyncRepoIntel);
+const mockedUseDirty = vi.mocked(useDirtyContextDocs);
+
+/** No uncommitted project-context edits — the default for every existing test. */
+function dirtyResult(paths: string[] = []) {
+  return { data: { paths } } as unknown as ReturnType<typeof useDirtyContextDocs>;
+}
 
 function queryResult(overrides: Partial<ReturnType<typeof useBlast>>) {
   return {
@@ -63,7 +74,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof BlastRadiusCard>>
   const qc = new QueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <NextIntlClientProvider locale="en" messages={{ blast: messages }}>
+      <NextIntlClientProvider locale="en" messages={{ blast: messages, context: contextMessages }}>
         <BlastRadiusCard prId="pr-1" repoId="repo-1" {...props} />
       </NextIntlClientProvider>
     </QueryClientProvider>,
@@ -71,6 +82,11 @@ function renderCard(props: Partial<React.ComponentProps<typeof BlastRadiusCard>>
 }
 
 describe("BlastRadiusCard", () => {
+  // Default: a clean clone. The resync-confirmation tests override this.
+  beforeEach(() => {
+    mockedUseDirty.mockReturnValue(dirtyResult([]));
+  });
+
   it("loading state shows an accessible role=status line", () => {
     mockedUseBlast.mockReturnValue(queryResult({ isLoading: true }));
     mockedUseResync.mockReturnValue(resyncResult());
@@ -225,5 +241,53 @@ describe("BlastRadiusCard", () => {
     const resyncButton = screen.getByRole("button", { name: /resync/i });
     fireEvent.click(resyncButton);
     expect(mutate).toHaveBeenCalled();
+  });
+
+  /* AC-22/AC-53 — `sync()` is `git reset --hard`, so a re-index destroys
+     uncommitted edits to project-context documents. The user must be warned
+     with the affected paths, and the mutation must NOT fire until they say so. */
+  describe("uncommitted project-context edits block the re-index until confirmed", () => {
+    it("does not call resync on click — it opens a confirmation naming the documents at risk", () => {
+      const mutate = vi.fn();
+      mockedUseBlast.mockReturnValue(queryResult({ data: makeBlastRadius() }));
+      mockedUseResync.mockReturnValue(resyncResult({ mutate }));
+      mockedUseDirty.mockReturnValue(dirtyResult(["specs/api.md", "docs/arch.md"]));
+      renderCard();
+
+      fireEvent.click(screen.getByRole("button", { name: /resync/i }));
+
+      // The whole point of AC-53: nothing has been destroyed yet.
+      expect(mutate).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("specs/api.md")).toBeInTheDocument();
+      expect(screen.getByText("docs/arch.md")).toBeInTheDocument();
+    });
+
+    it("calls resync once the user confirms", () => {
+      const mutate = vi.fn();
+      mockedUseBlast.mockReturnValue(queryResult({ data: makeBlastRadius() }));
+      mockedUseResync.mockReturnValue(resyncResult({ mutate }));
+      mockedUseDirty.mockReturnValue(dirtyResult(["specs/api.md"]));
+      renderCard();
+
+      fireEvent.click(screen.getByRole("button", { name: /resync/i }));
+      fireEvent.click(screen.getByRole("button", { name: /re-index and discard/i }));
+
+      expect(mutate).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancelling leaves the clone untouched", () => {
+      const mutate = vi.fn();
+      mockedUseBlast.mockReturnValue(queryResult({ data: makeBlastRadius() }));
+      mockedUseResync.mockReturnValue(resyncResult({ mutate }));
+      mockedUseDirty.mockReturnValue(dirtyResult(["specs/api.md"]));
+      renderCard();
+
+      fireEvent.click(screen.getByRole("button", { name: /resync/i }));
+      fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+      expect(mutate).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 });

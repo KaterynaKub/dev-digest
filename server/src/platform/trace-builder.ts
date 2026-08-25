@@ -1,4 +1,5 @@
 import type {
+  ContextDocRead,
   MemoryPulled,
   PromptAssembly,
   RunLogLine,
@@ -30,7 +31,10 @@ export interface BuildTraceInput {
   toolCalls: ToolCall[];
   rawOutput: string;
   memoryPulled: MemoryPulled[];
-  specsRead: string[];
+  // Type aligned with `specs_read`'s union (0001b) — this CI-shaped path does
+  // not build a project-context set of its own and always passes `[]` today;
+  // see `run-executor.ts#buildProjectContext` for the caller that does.
+  specsRead: (string | ContextDocRead)[];
   log: RunLogLine[];
 }
 

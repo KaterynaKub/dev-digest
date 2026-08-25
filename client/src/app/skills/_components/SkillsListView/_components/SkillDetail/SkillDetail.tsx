@@ -16,6 +16,7 @@ import { useToast } from "@/lib/toast";
 import { TYPE_COLOR } from "../SkillCard/constants";
 import { ComingSoon } from "./_components/ComingSoon";
 import { ConfigTab } from "./_components/ConfigTab";
+import { ContextTab } from "./_components/ContextTab";
 import { PreviewTab } from "./_components/PreviewTab";
 import { VersionsTab } from "./_components/VersionsTab";
 import { SKILL_TABS } from "./constants";
@@ -76,6 +77,7 @@ export function SkillDetail({ skill }: { skill: Skill | null | undefined }) {
             first paint (the idiom ConfigTab documents for agents). */}
         {tab === "config" && <ConfigTab key={skill.id} skill={skill} />}
         {tab === "preview" && <PreviewTab skill={skill} />}
+        {tab === "context" && <ContextTab key={skill.id} entity="skill" id={skill.id} />}
         {tab === "evals" && (
           <ComingSoon icon="ListChecks" title={t("evals.comingSoon.title")} body={t("evals.comingSoon.body")} />
         )}

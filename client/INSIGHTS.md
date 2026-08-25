@@ -338,3 +338,30 @@ regression). Pass the shared object down whole and let the child narrow it
 (`const isTargeted = target?.file === sdFile.path ? target : null`): the
 identity is then stable across renders, the effect depends on one value, and
 the lint rule is satisfied without a disable comment.
+
+## Trap: `NextIntlClientProvider messages={x}` needs the NAMESPACE wrapper, and getting it wrong fails silently
+
+A component calling `useTranslations("runs")` resolves keys under a `runs` key
+in the provider's `messages` object. Passing the imported JSON directly —
+`messages={messages}` where `messages` is `messages/en/runs.json` — looks right
+and type-checks, but every lookup then misses.
+
+The failure is silent in the worst way: `next-intl` **swallows** the resulting
+`IntlError: MISSING_MESSAGE: Could not resolve 'runs'`, renders the raw key
+path as the visible text, and the test still runs. Every `getByText` for a
+translated label then fails with RTL's generic "Unable to find an element with
+the text: …", pointing at the assertion rather than at the provider — so the
+obvious reading is "my component doesn't render that", and the hunt goes to the
+component. Confirmed the component was fine only by dumping `screen.debug()`
+and seeing the untranslated content.
+
+Correct: `messages={{ runs: messages } as never}`.
+
+Two ways to catch it fast:
+- The swallowed error IS printed to stderr. `pnpm exec vitest run 2>&1 | grep IntlError`
+  must come back with zero matches — a green suite proves nothing on its own.
+- If a `getByText` for a translated string fails while a plain, untranslated
+  string in the same component is found, suspect the provider, not the render.
+
+Note `RunTraceDrawer.test.tsx` passes `messages` unwrapped and still works — it
+mocks the trace hooks and mounts differently, so it is not a counter-example.

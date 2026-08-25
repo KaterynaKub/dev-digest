@@ -18,6 +18,7 @@ export interface SkillTabDef {
 export const SKILL_TABS: readonly SkillTabDef[] = [
   { key: "config", labelKey: "detail.tabs.config" },
   { key: "preview", labelKey: "detail.tabs.preview" },
+  { key: "context", labelKey: "detail.tabs.context" },
   { key: "evals", labelKey: "detail.tabs.evals" },
   { key: "stats", labelKey: "detail.tabs.stats" },
   { key: "versions", labelKey: "detail.tabs.versions" },

@@ -127,6 +127,32 @@ There is **no `pnpm arch:check` in `client/`** — on the frontend this review
 are the only two packages with the script; **never** run it, and never
 attribute a violation to, `client/` or `e2e/`.
 
+**Know what this run is worth.** The implementer already ran `arch:check` on
+this same tree, and its report carries the numbers. You run it again to
+*confirm* those numbers against the tree as it stands now — one table row —
+not to rediscover them. Everything `depcruise` can prove is already proven;
+if the counts match the implementer's and sit at baseline, say so in one line
+and move on.
+
+Your value is the part no rule file encodes:
+
+- **`client/`, where there is no gate at all.** No `arch:check` exists in that
+  package, so every frontend boundary — `fetch` in a component, a redeclared
+  contract type, a string inlined in JSX instead of `messages/`, a missing
+  loader on an async action — is found by reading or not at all. Spend your
+  budget here first when the diff touches `client/`.
+- **Semantic breaches `depcruise` cannot see**: a service that takes a `Deps`
+  object but reaches through it into persistence, a "port" that is an adapter
+  in everything but name, a helper that is pure by import graph and stateful in
+  fact, a cross-module reach dressed up as a shared constant.
+- **New debt disguised as old.** A violation matching an inherited-baseline rule
+  is still new if your diff introduced the edge. The count staying at twenty
+  does not prove nothing moved.
+
+If the mechanical run is clean and the diff is backend-only with nothing
+semantic to add, the right report is short and says so. Padding it by narrating
+the twenty inherited warnings back to the reader is the failure mode here.
+
 **It exits 0 even with violations** — the rules are `warn`-severity in
 `server/`. Judge the run by the summary line
 `x N dependency violations (E errors, W warnings)`, never by exit code.

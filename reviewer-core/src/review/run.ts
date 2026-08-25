@@ -61,7 +61,11 @@ export interface ReviewInput {
   skills?: string[];
   /** Curated memory items. */
   memory?: string[];
-  /** Project-context spec chunks (untrusted; delimiter-wrapped downstream). */
+  /**
+   * Attached project-context documents, as RAW text — supplied by the server's
+   * `run-executor.ts#buildProjectContext`. Untrusted; `assemblePrompt` wraps
+   * each element itself (see its `specs` doc), so do NOT pre-wrap here.
+   */
   specs?: string[];
   /**
    * Optional callers-of-changed-symbols digest (T1.3). Untrusted; rendered

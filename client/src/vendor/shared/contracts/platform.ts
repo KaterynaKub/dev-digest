@@ -98,6 +98,26 @@ export const IntentLinkAllowlist = z.array(IntentLinkPattern).max(50);
 export type IntentLinkAllowlist = z.infer<typeof IntentLinkAllowlist>;
 
 /**
+ * One workspace-relative directory root under which project-context documents
+ * are looked up (e.g. `specs/`, `docs/adr`). This is the containment guard at
+ * the schema layer: no leading `/`, no Windows-absolute prefix (`C:`), no
+ * backslash, and — checked per path SEGMENT, not just at the string's start —
+ * no `.` or `..` segment anywhere. A char-class regex alone (`[A-Za-z0-9._-]+`
+ * joined by `/`) would accept `../etc`, because `..` is itself a valid run of
+ * allowed characters; segment-by-segment rejection is required to actually
+ * block traversal.
+ */
+const CONTEXT_ROOT_CHARS = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*\/?$/;
+export const ContextRoot = z.string().refine((s) => {
+  if (!CONTEXT_ROOT_CHARS.test(s)) return false;
+  const segments = s.replace(/\/$/, '').split('/');
+  return segments.every((seg) => seg !== '.' && seg !== '..');
+}, 'must be a relative path with no "." or ".." segment');
+/** Workspace's set of context-doc roots. Min 1 so listing always has scope. */
+export const ContextRoots = z.array(ContextRoot).min(1).max(20);
+export type ContextRoots = z.infer<typeof ContextRoots>;
+
+/**
  * Non-secret prefs/config. Secrets (API keys) are NOT stored here — they go
  * through SecretsProvider (.env in MVP). Settings is a flat key/value bag,
  * surfaced as a typed object for the well-known keys.
@@ -112,6 +132,8 @@ export const SettingsKnown = z.object({
   feature_models: z.record(FeatureModelId, FeatureModelChoice).default({}),
   /** Hosts the intent classifier may fetch an external link from. Empty = fetch nothing (default). */
   intent_link_allowlist: IntentLinkAllowlist.default([]),
+  /** Directory roots project-context documents are listed/attached from. */
+  context_roots: ContextRoots.default(['specs/', 'docs/', 'insights/']),
 });
 export type SettingsKnown = z.infer<typeof SettingsKnown>;
 

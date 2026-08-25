@@ -7,6 +7,7 @@ import type {
   Embedder,
   LLMProvider,
   HttpFetcher,
+  Tokenizer,
 } from '@devdigest/shared';
 import type { AppConfig } from './config.js';
 import type { Db } from '../db/client.js';
@@ -35,10 +36,11 @@ import { WorkspaceRepository } from '../modules/workspace/repository.js';
 import { RepoIntelRepository } from '../modules/repo-intel/repository.js';
 import { SmartDiffRepository } from '../modules/smart-diff/repository.js';
 import { BlastRepository } from '../modules/blast/repository.js';
+import { ProjectContextRepository } from '../modules/project-context/repository.js';
 import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService, repoIntelDeps } from '../modules/repo-intel/service.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
-import { type Tokenizer, TiktokenTokenizer } from '../adapters/tokenizer/index.js';
+import { TiktokenTokenizer } from '../adapters/tokenizer/index.js';
 
 /**
  * DI container. One per app instance. Holds config, db, the JobRunner,
@@ -92,6 +94,7 @@ export class Container {
   private _repoIntelRepo?: RepoIntelRepository;
   private _smartDiffRepo?: SmartDiffRepository;
   private _blastRepo?: BlastRepository;
+  private _projectContextRepo?: ProjectContextRepository;
   private _repoIntel?: RepoIntel;
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
@@ -151,6 +154,10 @@ export class Container {
 
   get blastRepo(): BlastRepository {
     return (this._blastRepo ??= new BlastRepository(this.db));
+  }
+
+  get projectContextRepo(): ProjectContextRepository {
+    return (this._projectContextRepo ??= new ProjectContextRepository(this.db));
   }
 
   get codeIndex(): CodeIndex {

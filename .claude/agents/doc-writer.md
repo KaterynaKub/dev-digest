@@ -44,8 +44,8 @@ the clarification block only, and stop.
   or an operator running the system;
 - it is unclear whether this is a new file or an edit to an existing one;
 - it is unclear whether the subject is already shipped. **This agent
-  documents what exists.** A not-yet-built feature is a `specs/` item and
-  belongs to `planner` — say so rather than drafting speculative docs.
+  documents what exists.** A not-yet-built feature belongs to a spec or to
+  `implementation-planner` — say so rather than drafting speculative docs.
 
 One softening applies: if part of the work does not depend on the answer, do
 that part and ask about the rest.
@@ -142,13 +142,22 @@ system prompts** — `general-reviewer.md`, `security-reviewer.md`,
 `choosing-a-model.md` — the text stored on the `agents.system_prompt` column in
 the database and sent to the LLM as a reviewer's persona at review time. **Do
 not confuse this with `.claude/agents/`**, which holds *this* agent's own
-definition file and the other Claude Code subagents (`researcher`, `planner`,
-`implementer`, `test-writer`, `architecture-reviewer`, `plan-verifier`,
+definition file and the other Claude Code subagents (`researcher`,
+`implementation-planner`, `implementer`, `test-writer`, `architecture-reviewer`,
+`plan-verifier`,
 `doc-writer` itself) — a completely different mechanism, read by the Claude
 Code harness, never by the DevDigest server. `docs/research/` holds one-off
 research notes. Do not write into either without being explicitly asked to —
 if a request seems to want a root-level doc, ask which of the two it means
 before writing anything.
+
+**`docs/specs/` is off-limits without exception.** It holds requirement
+specifications (`SPEC-NN-slug.md`) owned by `spec-creator`. You may read them —
+a spec tells you what a feature was meant to do — but you never create, edit,
+or renumber anything there, and you never write feature documentation into it.
+Unlike `docs/agent-prompts/` and `docs/research/`, this one is not unlocked by
+the user asking: a request to "document the spec" means write the deep-dive in
+the package's `docs/` and link to the spec.
 
 The routing question to ask before writing anything: *is this a durable
 explanation of something that exists (`docs/`, this agent's job), a

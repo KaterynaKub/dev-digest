@@ -1,6 +1,7 @@
 import { simpleGit, type SimpleGit } from 'simple-git';
-import { join } from 'node:path';
-import { mkdir, readFile, access, rm } from 'node:fs/promises';
+import { join, relative, sep } from 'node:path';
+import { mkdir, readFile, writeFile as fsWriteFile, access, rm, readdir } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import { constants } from 'node:fs';
 import type {
   GitClient,
@@ -128,6 +129,78 @@ export class SimpleGitClient implements GitClient {
 
   async readFile(repo: RepoRef, path: string): Promise<string> {
     return readFile(join(this.clonePathFor(repo), path), 'utf8');
+  }
+
+  /**
+   * Recursive readdir under each root, filtering by extension and
+   * `opts.excludeDirs`, skipping symlinks — same shape as
+   * `repo-intel/pipeline/walk.ts` but parameterised by root/ext/excludes
+   * instead of the indexer's fixed SUPPORTED_EXT.
+   */
+  async listFiles(
+    repo: RepoRef,
+    opts: { roots: string[]; ext: string; excludeDirs: string[]; limit: number },
+  ): Promise<{ paths: string[]; truncated: boolean }> {
+    const base = this.clonePathFor(repo);
+    const excluded = new Set(opts.excludeDirs);
+    const out: string[] = [];
+
+    const walk = async (dir: string): Promise<void> => {
+      let entries: Dirent[];
+      try {
+        entries = (await readdir(dir, { withFileTypes: true })) as Dirent[];
+      } catch {
+        return; // unreadable dir — skip cleanly, matches walkClone
+      }
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue; // never follow symlinks
+        if (entry.isDirectory()) {
+          if (excluded.has(entry.name)) continue;
+          await walk(join(dir, entry.name));
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        if (!entry.name.toLowerCase().endsWith(opts.ext.toLowerCase())) continue;
+        const rel = relative(base, join(dir, entry.name)).split(sep).join('/');
+        out.push(rel);
+      }
+    };
+
+    for (const root of opts.roots) {
+      await walk(join(base, root));
+    }
+
+    out.sort(); // stable order, matches walkClone
+    const truncated = out.length > opts.limit;
+    if (truncated) out.length = opts.limit;
+    return { paths: out, truncated };
+  }
+
+  /**
+   * Repo-relative paths (working-tree-relative, per simple-git) whose content
+   * differs from what is committed — untracked + modified + staged — narrowed
+   * to entries starting with one of `prefixes`.
+   */
+  async dirtyPaths(repo: RepoRef, prefixes: string[]): Promise<string[]> {
+    const status = await this.git(repo).status();
+    const all = status.files.map((f) => f.path.split('\\').join('/'));
+    if (prefixes.length === 0) return all;
+    return all.filter((p) => prefixes.some((prefix) => p.startsWith(prefix)));
+  }
+
+  /**
+   * Write `content` to a repo-relative `path`. Never commits. Rejects any
+   * path that would resolve outside the clone directory (defence in depth —
+   * callers are expected to containment-check before calling this).
+   */
+  async writeFile(repo: RepoRef, path: string, content: string): Promise<void> {
+    const base = this.clonePathFor(repo);
+    const target = join(base, path);
+    const rel = relative(base, target);
+    if (rel.startsWith('..') || rel.split(sep).some((seg) => seg === '..')) {
+      throw new Error(`writeFile: path escapes clone directory: ${path}`);
+    }
+    await fsWriteFile(target, content, 'utf8');
   }
 }
 

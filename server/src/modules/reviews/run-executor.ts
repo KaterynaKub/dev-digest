@@ -1,4 +1,5 @@
 import type {
+  ContextDocRead,
   FeatureModelChoice,
   GitClient,
   GitHubClient,
@@ -7,6 +8,7 @@ import type {
   Provider,
   Review,
   RunTrace,
+  Tokenizer,
   UnifiedDiff,
 } from '@devdigest/shared';
 import type { RunBus } from '../../platform/sse.js';
@@ -21,6 +23,13 @@ import type { ReviewRepository, FindingRow, PullRow, ReviewRow, RepoRow } from '
 // AgentsRepository above is already imported the same way. skillsForAgents is
 // the READ side of agent_skills; skills owns it (see modules/skills/CLAUDE.md).
 import type { SkillsRepository } from '../skills/repository.js';
+// Same allowance as SkillsRepository above: another module's REPOSITORY, not
+// its service/routes. listForAgentWithSkills is the READ side of the agent's
+// own + inherited-from-enabled-skills project-context attachments;
+// project-context owns it (see modules/project-context/CLAUDE.md).
+import type { ProjectContextRepository } from '../project-context/repository.js';
+import { dedupeByPath } from '../project-context/helpers.js';
+import { MAX_DOC_CHARS, MAX_CONTEXT_BLOCK_TOKENS } from '../project-context/constants.js';
 import { slugify } from '../skills/helpers.js';
 import { REVIEW_STRATEGY } from './constants.js';
 import { taskLine } from './helpers.js';
@@ -62,6 +71,10 @@ export interface ReviewRunDeps {
   llm: (provider: Provider) => Promise<LLMProvider>;
   /** Read-only: linked skill bodies in `agent_skills.order`, for buildSkillBodies. */
   skillsRepo: SkillsRepository;
+  /** Read-only: agent + inherited-skill context attachments, in persisted order. */
+  contextRepo: ProjectContextRepository;
+  /** `@devdigest/shared` port ONLY — never `../../adapters/tokenizer/index.js` directly. */
+  tokenizer: Tokenizer;
   /** Resolver: a missing GitHub token must fail intent derivation only, not the whole run/app. */
   github: () => Promise<GitHubClient>;
   /** Resolver: workspace override → registry default for the intent classifier's model. */
@@ -262,6 +275,10 @@ export class ReviewRunExecutor {
       // (an agent can have repo_intel:false and still get its linked skills).
       const skills = await this.buildSkillBodies(agent.id, runLog);
 
+      // Project context — agent + inherited-skill attachments. Also NOT gated
+      // by repoIntelOn, same reasoning as skills above (AC-30).
+      const projectContext = await this.buildProjectContext(agent, workspaceId, repo, runLog);
+
       const task = taskLine(pull) + rankNote;
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
@@ -284,6 +301,11 @@ export class ReviewRunExecutor {
         // Linked skill bodies (enabled only), in link order. Independent of
         // repoIntel — a repo_intel:false agent still gets its skills.
         ...(skills ? { skills } : {}),
+        // Attached project-context documents — RAW text. `assemblePrompt` wraps each
+        // element via wrapUntrusted('spec-N', …) itself (reviewer-core/src/prompt.ts:125),
+        // unlike `skills`/`intent` which arrive pre-wrapped. Do NOT wrap here — that
+        // would nest the delimiters twice.
+        ...(projectContext.specs?.length ? { specs: projectContext.specs } : {}),
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
@@ -369,7 +391,8 @@ export class ReviewRunExecutor {
         })),
         raw_output: outcome.raw,
         memory_pulled: [],
-        specs_read: [],
+        specs_read: projectContext.specsRead,
+        specs_reader_error: projectContext.readerError ?? null,
         // Persisted log = the run's FULL event buffer (incl. shared pre-work:
         // diff load + intent), not just events recorded inside this method.
         log: runLog.logFor(runId),
@@ -542,6 +565,146 @@ export class ReviewRunExecutor {
   }
 
   /**
+   * Attached project-context documents for one agent — its own attachments
+   * (persisted order) followed by attachments inherited from its ENABLED
+   * linked skills (`agent_skills.order`, AC-25/AC-29), deduped by path with
+   * first occurrence winning (AC-26/AC-42), read live from the repo clone,
+   * truncated at `MAX_DOC_CHARS` (AC-33) and budgeted at
+   * `MAX_CONTEXT_BLOCK_TOKENS` (AC-34). NOT gated on `agent.repoIntel` —
+   * orthogonal to repo-intel, same rule as `buildSkillBodies` above (AC-30).
+   *
+   * Best-effort at the OUTER level: a `listForAgentWithSkills` failure never
+   * fails the run (NFR-6) — it degrades to an empty `specs` and a recorded
+   * `readerError`. Failures reading ONE document (throw or empty-string —
+   * both count as missing, same tolerance as `project-context/service.ts`,
+   * see root INSIGHTS.md) only drop that one document (AC-35/AC-36).
+   *
+   * Returns BOTH `specs` (RAW text, in survivor order — NOT wrapUntrusted'd
+   * here; see the call site's comment for why) and `specsRead` (every
+   * attempted attachment, including missing/truncated/dropped, for the trace —
+   * AC-56 requires a status for each attached document, not just the injected
+   * ones).
+   */
+  private async buildProjectContext(
+    agent: AgentRow,
+    workspaceId: string,
+    repo: RepoRow,
+    runLog: RunLogger,
+  ): Promise<{ specs?: string[]; specsRead: ContextDocRead[]; readerError?: string }> {
+    let view;
+    try {
+      view = await this.deps.contextRepo.listForAgentWithSkills(workspaceId, agent.id);
+    } catch (err) {
+      const msg = (err as Error).message;
+      runLog.info(`project context: lookup failed — ${msg}`);
+      return { specsRead: [], readerError: msg };
+    }
+
+    // Skill names for the `skill_name` trace field (AC-40) — reuse the same
+    // repository buildSkillBodies() already calls; cheap, and this run's
+    // agent_skills rows are already warm from `listForAgentWithSkills`.
+    let skillNames = new Map<string, string>();
+    try {
+      const byAgent = await this.deps.skillsRepo.skillsForAgents([agent.id]);
+      skillNames = new Map((byAgent.get(agent.id) ?? []).map((s) => [s.id, s.name]));
+    } catch {
+      // Best-effort: an unresolved name just falls back to `undefined` below.
+    }
+
+    type Candidate = { path: string; origin: 'agent' | 'skill'; skillName?: string };
+    const ordered: Candidate[] = [
+      ...view.agent.map((d): Candidate => ({ path: d.path, origin: 'agent' })),
+      ...view.inherited.map(
+        (d): Candidate => ({ path: d.path, origin: 'skill', skillName: skillNames.get(d.skillId) }),
+      ),
+    ];
+    // First occurrence wins (AC-26/AC-42) — an agent's own attachment beats
+    // the same path inherited from a skill; between two skills, link order
+    // (already reflected in `ordered`) decides.
+    const deduped = dedupeByPath(ordered);
+
+    const ref = { owner: repo.owner, name: repo.name };
+    const specs: string[] = [];
+    const specsRead: ContextDocRead[] = [];
+    let tokenBudget = 0;
+    let overBudget = false;
+    let readCount = 0;
+    let missingCount = 0;
+    let truncatedCount = 0;
+    let droppedCount = 0;
+
+    for (const doc of deduped) {
+      let text: string;
+      try {
+        text = await this.deps.git.readFile(ref, doc.path);
+      } catch {
+        text = '';
+      }
+      if (!text) {
+        missingCount++;
+        specsRead.push({
+          path: doc.path,
+          tokens: 0,
+          status: 'missing',
+          origin: doc.origin,
+          skill_name: doc.skillName ?? null,
+        });
+        continue;
+      }
+
+      let status: ContextDocRead['status'] = 'injected';
+      if (text.length > MAX_DOC_CHARS) {
+        // Truncation marker appended BEFORE any wrapping — `wrapUntrusted` is
+        // applied by `reviewer-core` (see the call site's comment), so the
+        // marker must already be inside the raw text to end up inside the
+        // delimiters (AC-33).
+        text = `${text.slice(0, MAX_DOC_CHARS)}\n\n[... truncated at ${MAX_DOC_CHARS} characters ...]`;
+        status = 'truncated';
+        truncatedCount++;
+      }
+
+      if (!overBudget) {
+        const tokens = this.deps.tokenizer.count(text);
+        if (tokenBudget + tokens > MAX_CONTEXT_BLOCK_TOKENS) {
+          overBudget = true;
+        } else {
+          tokenBudget += tokens;
+        }
+      }
+
+      if (overBudget) {
+        // Whole documents are dropped from the tail, never truncated further
+        // (AC-34) — measured tokens still reported for observability.
+        droppedCount++;
+        specsRead.push({
+          path: doc.path,
+          tokens: this.deps.tokenizer.count(text),
+          status: 'dropped_budget',
+          origin: doc.origin,
+          skill_name: doc.skillName ?? null,
+        });
+        continue;
+      }
+
+      readCount++;
+      specs.push(text);
+      specsRead.push({
+        path: doc.path,
+        tokens: this.deps.tokenizer.count(text),
+        status,
+        origin: doc.origin,
+        skill_name: doc.skillName ?? null,
+      });
+    }
+
+    runLog.info(
+      `project context: ${readCount} read, ${missingCount} missing, ${truncatedCount} truncated, ${droppedCount} dropped (budget)`,
+    );
+
+    return { ...(specs.length ? { specs } : {}), specsRead };
+  }
+
+  /**
    * A minimal RunTrace whose `log` is the run's full SSE buffer — persisted on
    * failure/cancel (and pre-work failures) so the events (and WHY it failed)
    * survive a reload, not just the in-memory stream.
@@ -577,7 +740,11 @@ export class ReviewRunExecutor {
       tool_calls: [],
       raw_output: '',
       memory_pulled: [],
+      // A run that failed/was cancelled before (or during) context assembly
+      // never actually attempted a read — `[]` here is correct as-is, not an
+      // omission; see `buildProjectContext` for the run that DID attempt one.
       specs_read: [],
+      specs_reader_error: null,
       log: this.deps.runBus.buffer(runId).map((e) => ({ t: e.t, kind: e.kind, msg: e.msg })),
     };
   }

@@ -397,8 +397,96 @@ deliberately NOT folded into `degraded`: a stale index is intact and internally
 consistent, so conflating the two would either understate a broken index or
 overstate a merely old one.
 
+## Trap: a character-class regex path guard accepts `..` as a valid segment — it is not a traversal guard by itself
+
+**Found:** 2026-08-24 · **Applies to:** src/vendor/shared/contracts/platform.ts
+
+A schema meant to reject path traversal (`ContextRoot`, gating AC-47's
+containment check) was specified as
+`z.string().regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*\/?$/)` — allowed chars
+joined by `/`. This looks like it blocks `..` because `..` "isn't a path
+separator", but `.` is itself in the allowed character class, so the segment
+`..` is just two allowed characters in a row and matches cleanly:
+`'../etc'.match(...)` succeeds. Confirmed with a standalone zod check before
+trusting the regex. A char-class-only pattern can only ever constrain which
+*characters* appear — it cannot forbid a specific *segment value* built
+entirely from allowed characters. The fix is a `.refine()` that splits on `/`
+and rejects any segment equal to `.` or `..`, in addition to the char-class
+check. Any future "safe relative path" Zod schema needs this same two-part
+shape (chars + per-segment rejection), not a regex alone — grep for
+`\.\.` acceptance with a throwaway test case before trusting a path-shaped
+regex as a security boundary.
+
 A related sharpening of the same data: the caller de-duplication key in
 `repo-intel/service.ts` is `fromPath|enclosing|toSymbol` with NO line, so
 several calls to the same symbol from the same function collapse to whichever
 row arrived first. The callers list is therefore "places that call this",
 never "all call sites" — do not read a count of 1 as proof of a single call.
+
+---
+
+## Trap: `{ ...new MockXClient(), method: fn }` silently drops every un-overridden method
+
+**Found:** 2026-08-24 · **Applies to:** src/adapters/mocks.ts, any test overriding one mock method
+
+`MockGitClient` (and the other `Mock*` adapters) implement their interface
+methods on the class prototype, not as own instance properties. Object spread
+(`{ ...instance }`) only copies OWN enumerable properties, so
+`{ ...new MockGitClient({ files }), listFiles: vi.fn(...) }` produces an object
+with exactly one method (`listFiles`) and nothing else — every other call
+(`readFile`, `dirtyPaths`, `writeFile`, …) throws `is not a function` the
+moment the code under test reaches it, even though the mock "looks" fully
+constructed at the call site. This surfaced writing
+`project-context-service.test.ts`: three tests failed with `X is not a
+function` from spreading `new MockGitClient()` to override a single method.
+
+Fix: bind every needed method explicitly from the base instance
+(`base.readFile.bind(base)`) into a plain object, then apply the override on
+top — never spread a class instance when you want "this instance, but one
+method replaced". A small `partialGit(base, overrides)` helper that lists every
+`GitClient` method once is cheaper than re-deriving this per test file.
+
+---
+
+## Pattern: assert on a route's log output by wrapping `req.log` inside an `onRequest` hook
+
+**Found:** 2026-08-24 · **Applies to:** test/*.it.test.ts, any route whose log call is part of the contract (e.g. NFR-11/NFR-17 "log path, never text")
+
+Fastify/Pino expose no public API to capture what a handler logged — `app.log`
+is the parent logger and `req.log` is a per-request Pino child, so spying on
+`app.log.info` before the request never sees a call made through `req.log`.
+The working approach: register `app.addHook('onRequest', async (req) => {...})`
+BEFORE injecting the request, and inside it replace `req.log.info`/`req.log.warn`
+in place with a wrapper that records the call args and then forwards to the
+original bound method. Because the hook runs first on every request, the
+child logger instance is already attached to `req` by the time the wrapper is
+installed, and the route handler's later `req.log.info(...)` calls go through
+the wrapper. Used in `project-context.it.test.ts` to assert `PUT
+.../project-context/doc` logs `{ path, ... }` and never the document's
+`content`/`reason` text.
+
+## Trap: `waitForPrRuns` returns silently on timeout — a slow lane looks like a broken feature
+
+`test/helpers/runs.ts`'s `waitForPrRuns` polls `agent_runs` until every row for
+the PR is terminal, but on timeout it **returns the rows it has** rather than
+throwing (`if (Date.now() - start > timeoutMs) return runs;`). Its default
+budget is `10_000` ms.
+
+A review run against `MockLLMProvider` takes 5–10 s wall-clock in the
+integration lane, so a file with several run-asserting tests exhausts that
+default on the later ones. The failure does not look like a timeout: the test
+proceeds with an unfinished run, so `trace.prompt_assembly` is `undefined` and
+`llm.calls` is empty — which reads exactly like "the feature never called the
+model" or "the prompt section was never assembled". Each test passes when run
+alone with `-t`, and fails only in the full-file run.
+
+Seen in `project-context-prompt.it.test.ts` (`0001b`): 5 of 7 passing together,
+2 failing with `Cannot read properties of undefined (reading 'user')` and
+`expected [] to have a length of 1`. Fixed by passing an explicit
+`{ expected: 1, timeoutMs: 30_000 }`. `vitest.config.ts` already allows it —
+`testTimeout` is `120_000`, so the helper's own default was the only ceiling.
+
+**Rule:** in any integration test that starts a review run, pass an explicit
+`timeoutMs` well above the number of runs × ~10 s. If a run-asserting test
+fails on a field being `undefined`, re-run it alone with `-t` before believing
+the production code is at fault.

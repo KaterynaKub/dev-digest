@@ -239,6 +239,40 @@ export interface GitClient {
   log(repo: RepoRef, path?: string): Promise<GitCommit[]>;
   readFile(repo: RepoRef, path: string): Promise<string>;
   clonePathFor(repo: RepoRef): string;
+  /**
+   * List repo-relative paths under `opts.roots` matching `opts.ext`, skipping
+   * `opts.excludeDirs` and symlinks. Sliced to `opts.limit`; `truncated` marks
+   * when more paths existed than the cap. Never throws for an unreadable
+   * subdirectory — that subtree is just skipped, matching `walkClone`.
+   */
+  listFiles(
+    repo: RepoRef,
+    opts: { roots: string[]; ext: string; excludeDirs: string[]; limit: number },
+  ): Promise<{ paths: string[]; truncated: boolean }>;
+  /**
+   * Repo-relative paths under `prefixes` whose working-tree content differs
+   * from what is committed (untracked + modified). Used for the "you're
+   * editing a doc that isn't the version being reviewed" preflight warning.
+   */
+  dirtyPaths(repo: RepoRef, prefixes: string[]): Promise<string[]>;
+  /**
+   * Write `content` to a repo-relative `path` inside the clone working tree.
+   * Never commits. Implementations MUST reject any path that would escape
+   * the clone directory.
+   */
+  writeFile(repo: RepoRef, path: string, content: string): Promise<void>;
+}
+
+// ---------- Tokenizer ----------
+/**
+ * Token counter port. Consumed by repo-intel's repo-map budget search and by
+ * project-context token estimation. `approximate` flags when the underlying
+ * adapter fell back to a heuristic (e.g. a BPE encoder failed to load), so
+ * callers can surface "≈" rather than an exact count.
+ */
+export interface Tokenizer {
+  count(text: string): number;
+  readonly approximate: boolean;
 }
 
 // ---------- CodeIndex (ripgrep + tree-sitter) ----------
