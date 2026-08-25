@@ -23,7 +23,7 @@ export function createMcpServer(service: McpToolsService): McpServer {
     run_agent_on_pr: runAgentOnPrTool(service),
     get_findings: getFindingsTool(service),
     get_conventions: getConventionsTool(service),
-    get_blast_radius: getBlastRadiusTool(),
+    get_blast_radius: getBlastRadiusTool(service),
   };
 
   // Fixed order — see the module doc comment above.

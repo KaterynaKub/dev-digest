@@ -54,6 +54,7 @@ import {
   SEVERITY_COLOR,
   SEVERITY_ROW_BG,
   SEVERITY_ROW_BG_HOVER,
+  TARGET_HIGHLIGHT_MS,
 } from "./constants";
 import {
   buildLineCoverage,
@@ -77,6 +78,19 @@ export interface SmartDiffSectionProps {
   /** Navigates to a finding's card in the Findings tab. When omitted, mark
    *  badges render as plain non-interactive badges (see header comment). */
   onGoToFinding?: (findingId: string) => void;
+  /**
+   * A `file`:`line` to reveal and scroll to — set when the reviewer clicked a
+   * caller in BLAST RADIUS whose file this PR actually changed. `nonce` makes a
+   * repeat click on the SAME caller re-scroll: `file`/`line` alone would be an
+   * unchanged prop and the effect would not re-fire, leaving a reviewer who
+   * scrolled away stranded (same idiom as `page.tsx#findingNonce`).
+   *
+   * Unlike `onGoToFinding`, this can land on a row that carries no finding at
+   * all — a caller is ordinary code, not a flagged line — which is why the
+   * target is matched by line number rather than by the `sd-<path>-<line>` id
+   * (that id exists only on finding-covered rows).
+   */
+  targetLocation?: { file: string; line: number; nonce: number } | null;
 }
 
 const GROUP_LABEL_KEY: Record<SmartDiffRole, string> = {
@@ -98,6 +112,7 @@ export function SmartDiffSection({
   onOrderChange,
   findings,
   onGoToFinding,
+  targetLocation = null,
 }: SmartDiffSectionProps) {
   const t = useTranslations("prReview");
   const { data, isLoading, isError } = useSmartDiff(prId);
@@ -133,6 +148,25 @@ export function SmartDiffSection({
 
   const groupsByRole = new Map<SmartDiffRole, SmartDiffFile[]>();
   for (const group of data?.groups ?? []) groupsByRole.set(group.role, group.files);
+
+  // Which group holds the target file. Needed because `boilerplate` is closed by
+  // default (and any group can be closed by the reviewer) — scrolling to a row
+  // inside a collapsed group would scroll to nothing, since the file card's body
+  // is not mounted at all.
+  const targetRole = targetLocation
+    ? ([...groupsByRole.entries()].find(([, groupFiles]) =>
+        groupFiles.some((f) => f.path === targetLocation.file),
+      )?.[0] ?? null)
+    : null;
+
+  // Opening the group is the one piece of target handling that CANNOT live in
+  // the file card: a closed group never mounts the card that would react. Only
+  // ever opens — a target must not collapse a group the reviewer opened, and
+  // `openGroups` otherwise stays reviewer-owned (never synced from props).
+  React.useEffect(() => {
+    if (!targetRole) return;
+    setOpenGroups((prev) => (prev[targetRole] ? prev : { ...prev, [targetRole]: true }));
+  }, [targetRole, targetLocation]);
 
   return (
     <section style={s.section}>
@@ -244,6 +278,11 @@ export function SmartDiffSection({
                         findingsById={findingsById}
                         t={t}
                         onGoToFinding={onGoToFinding}
+                        // The WHOLE target, not a per-card object built inline:
+                        // a fresh `{line, nonce}` on every render would make the
+                        // card's effects re-fire constantly (and re-scroll the
+                        // page). The card matches `file` against its own path.
+                        target={targetLocation}
                       />
                     ))}
                 </div>
@@ -261,17 +300,49 @@ function SmartDiffFileCard({
   findingsById,
   t,
   onGoToFinding,
+  target = null,
 }: {
   sdFile: SmartDiffFile;
   file: PrFile | null;
   findingsById: Map<string, FindingRecord>;
   t: ReturnType<typeof useTranslations>;
   onGoToFinding?: (findingId: string) => void;
+  /** The section-wide Blast Radius target; this card acts on it only when
+   *  `target.file` is its own path (see `isTargeted` below). */
+  target?: { file: string; line: number; nonce: number } | null;
 }) {
   // File-level expansion: open when this file already has findings, else
   // closed — computed once in the useState initialiser (never AUTO_EXPAND_MAX_LINES).
   const [open, setOpen] = React.useState(() => (sdFile.finding_count ?? 0) > 0);
   const onToggle = () => setOpen((v) => !v);
+
+  // Reveal + scroll + highlight for an incoming target. Three separate concerns
+  // that must happen in this order, hence one effect rather than three:
+  // the row cannot be scrolled to before `open` has mounted the file body.
+  const bodyRef = React.useRef<HTMLDivElement | null>(null);
+  const [highlightedLine, setHighlightedLine] = React.useState<number | null>(null);
+  // Null on every card but the one the caller named. `target` itself is a fresh
+  // object only on a real click (see the host's `setBlastTarget`), so depending
+  // on this value is the same as depending on its fields — and it satisfies
+  // exhaustive-deps without a disable comment.
+  const isTargeted = target?.file === sdFile.path ? target : null;
+
+  React.useEffect(() => {
+    if (!isTargeted) return;
+    setOpen(true);
+  }, [isTargeted]);
+
+  React.useEffect(() => {
+    if (!isTargeted || !open) return;
+    // Read the row out of the DOM rather than holding a ref per line: a large
+    // file renders thousands of rows and only one of them is ever a target.
+    const row = bodyRef.current?.querySelector(`[data-line="${isTargeted.line}"]`);
+    if (!row) return;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedLine(isTargeted.line);
+    const timer = window.setTimeout(() => setHighlightedLine(null), TARGET_HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [isTargeted, open]);
 
   const isLarge = !!sdFile.is_large;
   const findingCount = sdFile.finding_count ?? 0;
@@ -326,7 +397,7 @@ function SmartDiffFileCard({
       </div>
 
       {open && (
-        <div style={s.fileBody}>
+        <div style={s.fileBody} ref={bodyRef}>
           {!file && <div style={{ padding: "8px 12px", fontSize: 12, color: "var(--text-muted)" }}>{sdFile.path}</div>}
           {file &&
             lines.map((ln, i) => (
@@ -339,6 +410,7 @@ function SmartDiffFileCard({
                 onHoverFinding={setHoveredFindingId}
                 t={t}
                 onGoToFinding={onGoToFinding}
+                isTarget={ln.newNo != null && ln.newNo === highlightedLine}
               />
             ))}
         </div>
@@ -355,6 +427,7 @@ function SmartDiffLine({
   onHoverFinding,
   t,
   onGoToFinding,
+  isTarget = false,
 }: {
   ln: Line;
   path: string;
@@ -365,6 +438,8 @@ function SmartDiffLine({
   onHoverFinding: (findingId: string | null) => void;
   t: ReturnType<typeof useTranslations>;
   onGoToFinding?: (findingId: string) => void;
+  /** This row is the transient target of a Blast Radius caller navigation. */
+  isTarget?: boolean;
 }) {
   if (ln.kind === "hunk") {
     return (
@@ -407,8 +482,8 @@ function SmartDiffLine({
   // of the diff in the default layer.
   const ownsOpenTooltip = coverage?.startsHere.some((b) => b.finding_id === hoveredFindingId) ?? false;
 
-  const rowStyle =
-    coverage && tintSeverity
+  const rowStyle = {
+    ...(coverage && tintSeverity
       ? {
           ...lineRowFor(ln.kind),
           ...s.markLineExtra(
@@ -419,7 +494,12 @@ function SmartDiffLine({
           ),
           ...(ownsOpenTooltip ? s.rowWithOpenTooltip : null),
         }
-      : lineRowFor(ln.kind);
+      : lineRowFor(ln.kind)),
+    // Spread LAST so the target outline survives on a row that a finding also
+    // covers — `markLineExtra` sets no `outline*`, so nothing is overwritten
+    // in either direction (see `s.targetRow`).
+    ...(isTarget ? s.targetRow : null),
+  };
 
   // Hovering anywhere on a covered row traces the row's INNERMOST finding — the
   // one that starts latest. Where blocks overlap that is the more specific claim
@@ -435,6 +515,10 @@ function SmartDiffLine({
   return (
     <div
       id={coverage ? `sd-${path}-${ln.newNo}` : undefined}
+      // Every row with a new-side line number is addressable, covered or not:
+      // a Blast Radius caller is ordinary code and usually carries no finding,
+      // so the `sd-` id above (findings only) cannot serve as its anchor.
+      data-line={ln.newNo ?? undefined}
       style={rowStyle}
       onMouseEnter={rowFinding ? () => onHoverFinding(rowFinding) : undefined}
       onMouseLeave={rowFinding ? () => onHoverFinding(null) : undefined}

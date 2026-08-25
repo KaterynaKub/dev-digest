@@ -20,9 +20,20 @@ interface DiffTabProps {
   /** Forwarded to SmartDiffSection untouched — navigates a mark badge click to
    *  that finding's card in the Findings tab. */
   onGoToFinding?: (findingId: string) => void;
+  /** Forwarded to SmartDiffSection untouched — a `file`:`line` arrived at from
+   *  BLAST RADIUS, to be revealed and scrolled to. */
+  targetLocation?: { file: string; line: number; nonce: number } | null;
 }
 
-export function DiffTab({ prId, filesCount, files, canComment, findings, onGoToFinding }: DiffTabProps) {
+export function DiffTab({
+  prId,
+  filesCount,
+  files,
+  canComment,
+  findings,
+  onGoToFinding,
+  targetLocation,
+}: DiffTabProps) {
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
   // Comments start hidden so the diff is clean by default — toggle to reveal.
@@ -32,6 +43,18 @@ export function DiffTab({ prId, filesCount, files, canComment, findings, onGoToF
   // (which alone carries inline commenting — SmartDiffSection deliberately
   // does not reimplement it).
   const [order, setOrder] = React.useState<"smart" | "original">("smart");
+
+  // A Blast Radius caller can only be revealed by the grouped view — in
+  // "original" mode SmartDiffSection collapses to its header and renders no
+  // rows at all, so the arriving target would silently land nowhere. Switching
+  // back is the only way to honour the click; the toggle stays mounted, so the
+  // reviewer can return to "original" immediately.
+  // `targetLocation` is a fresh object only when the host actually records a new
+  // click (`setBlastTarget`), so depending on the object itself is equivalent to
+  // depending on its three fields — and keeps the lint rule satisfied.
+  React.useEffect(() => {
+    if (targetLocation) setOrder("smart");
+  }, [targetLocation]);
 
   const commentCount = comments?.length ?? 0;
 
@@ -61,6 +84,7 @@ export function DiffTab({ prId, filesCount, files, canComment, findings, onGoToF
         onOrderChange={setOrder}
         findings={findings}
         onGoToFinding={onGoToFinding}
+        targetLocation={targetLocation}
       />
 
       {order === "original" && (

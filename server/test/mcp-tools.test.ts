@@ -13,6 +13,7 @@ import {
 } from '../src/modules/mcp-tools/service.js';
 import { createMcpServer } from '../src/mcp/server-factory.js';
 import { TOOL_NAMES } from '../src/modules/mcp-tools/constants.js';
+import type { BlastRadius } from '@devdigest/shared';
 
 function agent(overrides: Partial<AgentRowLike> = {}): AgentRowLike {
   return {
@@ -46,7 +47,25 @@ function baseDeps(overrides: Partial<McpToolsDeps> = {}): McpToolsDeps {
     conventionsReader: {
       view: vi.fn(async () => ({ scan: null, candidates: [] })),
     },
+    blastReader: {
+      forPull: vi.fn(async () => blastRadius()),
+    },
     workspaceId: vi.fn(async () => 'ws-1'),
+    ...overrides,
+  };
+}
+
+/** A `full`-index, empty-downstream map — the "nothing calls this" answer. */
+function blastRadius(overrides: Partial<BlastRadius> = {}): BlastRadius {
+  return {
+    changed_symbols: [],
+    downstream: [],
+    summary: 'No changed symbols detected.',
+    index_status: 'full',
+    degraded: false,
+    reason: null,
+    indexed_sha: 'abc123',
+    index_stale: false,
     ...overrides,
   };
 }
@@ -190,6 +209,59 @@ describe('McpToolsService', () => {
       ]);
     });
   });
+
+  describe('getBlastRadius', () => {
+    it('resolves repo+pr to prId and returns the reader\'s map untouched', async () => {
+      const map = blastRadius({
+        changed_symbols: [{ name: 'chargeCard', file: 'src/billing.ts', kind: 'function' }],
+        summary: '1 changed symbol · no downstream callers found.',
+      });
+      const forPull = vi.fn(async () => map);
+      const deps = baseDeps({
+        repoRepo: { findByFullName: vi.fn(async () => ({ id: 'r1', fullName: 'acme/payments-api' })) },
+        reviewRepo: { findPullByNumber: vi.fn(async () => ({ prId: 'pr1', repoId: 'r1', headSha: 'sha' })) },
+        blastReader: { forPull },
+      });
+      const service = new McpToolsService(deps);
+
+      const result = await service.getBlastRadius('https://github.com/acme/payments-api', 7);
+
+      expect(forPull).toHaveBeenCalledWith('ws-1', 'pr1');
+      // Untouched: no summarising, no re-shaping — same object the HTTP route serves.
+      expect(result).toBe(map);
+    });
+
+    it('throws RepoNotFoundError before ever reading the index', async () => {
+      const forPull = vi.fn(async () => blastRadius());
+      const deps = baseDeps({
+        repoRepo: { findByFullName: vi.fn(async () => undefined) },
+        blastReader: { forPull },
+      });
+      const service = new McpToolsService(deps);
+      await expect(service.getBlastRadius('acme/payments-api', 7)).rejects.toBeInstanceOf(
+        RepoNotFoundError,
+      );
+      expect(forPull).not.toHaveBeenCalled();
+    });
+
+    // Blast reads the code index, not a review — unlike get_findings it must
+    // answer for a PR nobody has reviewed rather than raising NoReviewYetError.
+    it('serves a PR that has never been reviewed', async () => {
+      const deps = baseDeps({
+        repoRepo: { findByFullName: vi.fn(async () => ({ id: 'r1', fullName: 'acme/payments-api' })) },
+        reviewRepo: { findPullByNumber: vi.fn(async () => ({ prId: 'pr1', repoId: 'r1', headSha: 'sha' })) },
+        reviewRunner: {
+          resolveTargets: vi.fn(async () => []),
+          runReviewAndWait: vi.fn(async () => ({ runs: [], timedOut: false, reviews: [] })),
+          reviewsForPull: vi.fn(async () => []), // no review has ever run
+        },
+      });
+      const service = new McpToolsService(deps);
+      await expect(service.getBlastRadius('acme/payments-api', 7)).resolves.toMatchObject({
+        index_status: 'full',
+      });
+    });
+  });
 });
 
 describe('MCP protocol wiring (tools/list, tools/call)', () => {
@@ -271,16 +343,120 @@ describe('MCP protocol wiring (tools/list, tools/call)', () => {
     await server.close();
   });
 
-  it('get_blast_radius always errors with a STUB-prefixed text pointing at get_findings', async () => {
-    const { client, server } = await connectedClient(baseDeps());
+  it('get_blast_radius serves the resolved PR\'s map and is no longer a stub', async () => {
+    const forPull = vi.fn(async () =>
+      blastRadius({
+        changed_symbols: [{ name: 'chargeCard', file: 'src/billing.ts', kind: 'function' }],
+        downstream: [
+          {
+            symbol: 'chargeCard',
+            callers: [{ name: 'checkout', file: 'src/api/checkout.ts', line: 42 }],
+            endpoints_affected: ['POST /api/checkout'],
+            crons_affected: [],
+          },
+        ],
+        summary: '1 changed symbol · 1 caller across 1 file · 1 endpoint',
+      }),
+    );
+    const deps = baseDeps({
+      repoRepo: { findByFullName: vi.fn(async () => ({ id: 'r1', fullName: 'acme/payments-api' })) },
+      reviewRepo: { findPullByNumber: vi.fn(async () => ({ prId: 'pr1', repoId: 'r1', headSha: 'sha' })) },
+      blastReader: { forPull },
+    });
+    const { client, server } = await connectedClient(deps);
     const res = await client.callTool({
       name: 'get_blast_radius',
-      arguments: { repo: 'acme/payments-api', pr: 1 },
+      arguments: { repo: 'acme/payments-api', pr: 7 },
+    });
+
+    expect(res.isError).toBeFalsy();
+    const text = (res.content as { type: string; text: string }[])[0]?.text ?? '';
+    expect(text.startsWith('STUB:')).toBe(false);
+    // The PR was resolved to its internal id before the map was read.
+    expect(forPull).toHaveBeenCalledWith('ws-1', 'pr1');
+    expect(res.structuredContent).toMatchObject({
+      downstream: [
+        {
+          symbol: 'chargeCard',
+          callers: [{ name: 'checkout', file: 'src/api/checkout.ts', line: 42 }],
+          endpoints_affected: ['POST /api/checkout'],
+        },
+      ],
+      index_status: 'full',
+      degraded: false,
+    });
+    await client.close();
+    await server.close();
+  });
+
+  // KEY NEGATIVE TEST — the MCP mirror of `blast-helpers.test.ts`'s. An empty
+  // `downstream` must NOT reach the model as the same answer in both index
+  // states: on a full index it means "nothing calls this", on a failed one it
+  // means "we do not know". Flattening the two would let a model report an
+  // unmeasured blast radius as a safe one.
+  it('an empty downstream on a degraded index is NOT the same payload as on a full one', async () => {
+    const base = {
+      repoRepo: { findByFullName: vi.fn(async () => ({ id: 'r1', fullName: 'acme/payments-api' })) },
+      reviewRepo: { findPullByNumber: vi.fn(async () => ({ prId: 'pr1', repoId: 'r1', headSha: 'sha' })) },
+    };
+    const call = async (radius: BlastRadius) => {
+      const { client, server } = await connectedClient(
+        baseDeps({ ...base, blastReader: { forPull: vi.fn(async () => radius) } }),
+      );
+      const res = await client.callTool({
+        name: 'get_blast_radius',
+        arguments: { repo: 'acme/payments-api', pr: 7 },
+      });
+      await client.close();
+      await server.close();
+      return res;
+    };
+
+    const full = await call(blastRadius({ summary: '2 changed symbols · no downstream callers found.' }));
+    const failed = await call(
+      blastRadius({
+        summary: 'Index not built — downstream unavailable.',
+        index_status: 'failed',
+        degraded: true,
+        reason: 'index_failed',
+      }),
+    );
+
+    // Both carry an equally empty downstream…
+    expect(full.structuredContent).toMatchObject({ downstream: [] });
+    expect(failed.structuredContent).toMatchObject({ downstream: [] });
+    // …and are still distinguishable in every field that encodes WHY.
+    expect(full.structuredContent).toMatchObject({
+      index_status: 'full',
+      degraded: false,
+      reason: null,
+    });
+    expect(failed.structuredContent).toMatchObject({
+      index_status: 'failed',
+      degraded: true,
+      reason: 'index_failed',
+    });
+    expect(full.structuredContent?.summary).not.toEqual(failed.structuredContent?.summary);
+    // The text duplicate carries the same distinction — a client without
+    // structuredContent support must not lose it.
+    const textOf = (res: typeof full) => (res.content as { type: string; text: string }[])[0]?.text ?? '';
+    expect(textOf(failed)).toContain('"index_status":"failed"');
+    expect(textOf(full)).toContain('"index_status":"full"');
+  });
+
+  it('get_blast_radius maps an unknown PR to the pull-not-found text, never an empty map', async () => {
+    const deps = baseDeps({
+      repoRepo: { findByFullName: vi.fn(async () => ({ id: 'r1', fullName: 'acme/payments-api' })) },
+      reviewRepo: { findPullByNumber: vi.fn(async () => undefined) },
+    });
+    const { client, server } = await connectedClient(deps);
+    const res = await client.callTool({
+      name: 'get_blast_radius',
+      arguments: { repo: 'acme/payments-api', pr: 999 },
     });
     expect(res.isError).toBe(true);
     const text = (res.content as { type: string; text: string }[])[0]?.text ?? '';
-    expect(text.startsWith('STUB:')).toBe(true);
-    expect(text).toContain('get_findings');
+    expect(text).toContain('#999');
     await client.close();
     await server.close();
   });

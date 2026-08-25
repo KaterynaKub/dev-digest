@@ -44,6 +44,12 @@ export function useResyncRepoIntel(repoId: string | null | undefined) {
     mutationFn: () => api.post<{ status: string }>(`/repos/${repoId}/resync`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["repo-intel-state", repoId] });
+      // Blast Radius reads the SAME index this resync rebuilds — not a review
+      // run — so it invalidates here instead of on useRunReview. The blast
+      // query key is keyed by prId, not repoId (hooks/reviews.ts#useBlast),
+      // so this widens to every open PR's blast map rather than tracking a
+      // repoId → prId[] mapping just for cache invalidation.
+      qc.invalidateQueries({ queryKey: ["blast"] });
     },
   });
 }

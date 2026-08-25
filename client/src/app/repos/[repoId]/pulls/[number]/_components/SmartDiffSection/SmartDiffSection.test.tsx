@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -12,6 +12,13 @@ vi.mock("@/lib/hooks/reviews", () => ({
 }));
 
 afterEach(cleanup);
+
+// jsdom does not implement scrollIntoView.
+Element.prototype.scrollIntoView = vi.fn();
+
+beforeEach(() => {
+  vi.mocked(Element.prototype.scrollIntoView).mockClear();
+});
 
 const mockedUseSmartDiff = vi.mocked(useSmartDiff);
 
@@ -967,5 +974,102 @@ describe("SmartDiffSection", () => {
     // No popup, no modal, no new tab, no github.com on this path.
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(document.querySelector('a[href*="github.com"]')).not.toBeInTheDocument();
+  });
+
+  describe("targetLocation (Blast Radius caller navigation)", () => {
+    // The hard case, and the reason the target is matched by `data-line` rather
+    // than by the `sd-` id: the file is in the boilerplate group (collapsed by
+    // default) AND the row carries no finding at all, so it has no `sd-` id.
+    // Both the group and the file card must open before the row can be reached.
+    function targetSetup() {
+      const file = makeFile("scripts/gen.ts", "@@ -1,3 +1,3 @@\n context\n-old\n+new");
+      mockedUseSmartDiff.mockReturnValue(
+        queryResult({
+          data: makeSmartDiff({
+            groups: [
+              { role: "core", files: [] },
+              { role: "wiring", files: [] },
+              {
+                role: "boilerplate",
+                files: [
+                  {
+                    path: "scripts/gen.ts",
+                    additions: 1,
+                    deletions: 1,
+                    finding_lines: [],
+                    finding_count: 0,
+                  },
+                ],
+              },
+            ],
+          }),
+        }),
+      );
+      return { file };
+    }
+
+    it("opens the collapsed group and file card, then scrolls to a row that carries no finding", () => {
+      const { file } = targetSetup();
+      renderSection({
+        files: [file],
+        targetLocation: { file: "scripts/gen.ts", line: 2, nonce: 1 },
+      });
+
+      const boilerplateHeader = screen
+        .getAllByRole("button", { name: /Boilerplate/ })
+        .find((el) => el.textContent?.includes("Boilerplate"));
+      expect(boilerplateHeader).toHaveAttribute("aria-expanded", "true");
+
+      // The row exists and was scrolled to, despite having no `sd-` id.
+      const row = document.querySelector('[data-line="2"]');
+      expect(row).toBeInTheDocument();
+      expect(document.getElementById("sd-scripts/gen.ts-2")).not.toBeInTheDocument();
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    });
+
+    it("re-scrolls when the same caller is clicked again (nonce bump only)", () => {
+      const { file } = targetSetup();
+      const { rerender } = renderSection({
+        files: [file],
+        targetLocation: { file: "scripts/gen.ts", line: 2, nonce: 1 },
+      });
+      const callsAfterFirst = vi.mocked(Element.prototype.scrollIntoView).mock.calls.length;
+
+      const qc = new QueryClient();
+      rerender(
+        <QueryClientProvider client={qc}>
+          <NextIntlClientProvider locale="en" messages={{ prReview: messages }}>
+            <SmartDiffSection
+              prId="pr-1"
+              files={[file]}
+              order="smart"
+              onOrderChange={() => {}}
+              targetLocation={{ file: "scripts/gen.ts", line: 2, nonce: 2 }}
+            />
+          </NextIntlClientProvider>
+        </QueryClientProvider>,
+      );
+
+      expect(vi.mocked(Element.prototype.scrollIntoView).mock.calls.length).toBeGreaterThan(
+        callsAfterFirst,
+      );
+    });
+
+    it("a target naming a file this PR did not change is a silent no-op", () => {
+      const { file } = targetSetup();
+      expect(() =>
+        renderSection({
+          files: [file],
+          targetLocation: { file: "src/never-touched.ts", line: 99, nonce: 1 },
+        }),
+      ).not.toThrow();
+
+      // No group was force-opened on its behalf: boilerplate keeps its default.
+      const boilerplateHeader = screen
+        .getAllByRole("button", { name: /Boilerplate/ })
+        .find((el) => el.textContent?.includes("Boilerplate"));
+      expect(boilerplateHeader).toHaveAttribute("aria-expanded", "false");
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
   });
 });

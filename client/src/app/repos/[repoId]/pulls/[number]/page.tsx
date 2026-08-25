@@ -20,7 +20,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { usePrReviews, useCancelRun, usePrActiveRuns, usePrRuns, useDeleteRun } from "@/lib/hooks/reviews";
 import { useActiveRepo, useRepoNotFound } from "@/lib/repo-context";
 import { ApiError } from "@/lib/api";
-import { githubPrUrl } from "@/lib/github-urls";
+import { githubBlobUrl, githubPrUrl } from "@/lib/github-urls";
 import type { FindingRecord } from "@devdigest/shared";
 
 export default function PRDetailPage() {
@@ -84,6 +84,66 @@ export default function PRDetailPage() {
       setFindingNonce((n) => n + 1);
     },
     [search, router, repoId, number],
+  );
+
+  // BLAST RADIUS caller → the code it names. Two destinations on purpose, because
+  // a caller is ordinary repository code and is USUALLY in a file this PR never
+  // touched: the diff simply has no row for it. So a caller inside the PR opens
+  // the Diff tab at that line (staying in the studio, where the reviewer keeps
+  // their findings and comments), and one outside it opens the file on GitHub at
+  // the PR's head sha. The alternative — making only in-PR callers clickable —
+  // would leave most of the map dead to the pointer.
+  const [blastTarget, setBlastTarget] = React.useState<{
+    file: string;
+    line: number;
+    nonce: number;
+  } | null>(null);
+  const changedPaths = React.useMemo(
+    () => new Set((pr?.files ?? []).map((f) => f.path)),
+    [pr?.files],
+  );
+  const goToLocation = React.useCallback(
+    (file: string, line: number, indexedSha: string | null) => {
+      // A line recorded against an older commit does not address the PR's diff:
+      // the Diff tab renders the HEAD patch, so scrolling to that number lands
+      // on unrelated code with no way for the reviewer to tell. GitHub, pinned
+      // to `indexedSha`, is the only destination that shows what the indexer
+      // actually saw — so a stale map always leaves the studio, even for a file
+      // this PR changed.
+      const staleForDiff = indexedSha != null && pr != null && indexedSha !== pr.head_sha;
+      if (changedPaths.has(file) && !staleForDiff) {
+        // Nonce, not the file/line pair: clicking the SAME caller twice is an
+        // identical target, and a reviewer who scrolled away still expects to be
+        // taken back (same reasoning as `findingNonce` above).
+        setBlastTarget((prev) => ({ file, line, nonce: (prev?.nonce ?? 0) + 1 }));
+        // URL built inline rather than through `setParam`, matching
+        // `goToFinding` above: `setParam` is redefined every render, so
+        // depending on it would rebuild this callback on each one.
+        const sp = new URLSearchParams(search.toString());
+        sp.set("tab", "diff");
+        router.replace(`/repos/${repoId}/pulls/${number}?${sp.toString()}`);
+        return;
+      }
+      // Reads `activeRepo` rather than the `repoFullName` alias below, which is
+      // declared further down the component — same value, no forward reference.
+      const fullName = activeRepo?.full_name ?? null;
+      // Nothing to open without the owner/repo or a commit to resolve against: a
+      // blob URL guessed from a partial identity would 404 rather than fail visibly.
+      if (!fullName || !pr) return;
+      // `indexedSha` FIRST, `head_sha` only as a fallback. The line number was
+      // recorded by the indexer against the commit it walked, so that is the
+      // only tree where it points at the right code — against the PR head it
+      // lands on whatever now occupies that line, which is how a caller ended
+      // up pointing at a `*/` in the middle of a comment block. The fallback
+      // exists solely for a null `indexed_sha` (no index at all), where a
+      // best-effort link beats a dead one.
+      window.open(
+        githubBlobUrl(fullName, indexedSha ?? pr.head_sha, file, line),
+        "_blank",
+        "noopener,noreferrer",
+      );
+    },
+    [changedPaths, activeRepo, pr, search, router, repoId, number],
   );
 
   // Reviews come newest-first; each is its own run (grouped into accordions).
@@ -152,7 +212,9 @@ export default function PRDetailPage() {
       />
 
       <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, margin: "0 auto" }}>
-        {tab === "overview" && <OverviewTab prBody={pr.body} />}
+        {tab === "overview" && (
+          <OverviewTab prBody={pr.body} prId={prId} repoId={repoId} onGoToLocation={goToLocation} />
+        )}
 
         {tab === "findings" && (
           <FindingsTab
@@ -190,6 +252,7 @@ export default function PRDetailPage() {
             canComment={pr.status === "open"}
             findings={allFindings}
             onGoToFinding={goToFinding}
+            targetLocation={blastTarget}
           />
         )}
       </div>

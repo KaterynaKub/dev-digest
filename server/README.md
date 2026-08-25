@@ -150,8 +150,11 @@ What the reviewer actually sends to the model is assembled in
 `src/mcp-server.ts` is a second, independent entrypoint — a local MCP server on
 **stdio** (no port, no CORS, no auth: the channel is the child process's own
 stdin/stdout) exposing 5 tools (`list_agents`, `run_agent_on_pr`,
-`get_findings`, `get_conventions`, `get_blast_radius` — a stub) over the
-existing domain logic. It does not import `app.ts`/`server.ts` and is not a
+`get_findings`, `get_conventions`, `get_blast_radius`) over the existing domain
+logic. `get_blast_radius` serves the same `BlastRadius` as
+`GET /pulls/:id/blast`, via the same `BlastService` — including
+`index_status`/`degraded`/`reason`, so a model can tell "nothing calls this"
+apart from "the index could not answer". It does not import `app.ts`/`server.ts` and is not a
 Fastify module (`src/modules/index.ts` only registers HTTP plugins).
 
 - **Run:** `pnpm mcp` (from `server/`). **Prerequisite:** run `pnpm db:migrate`

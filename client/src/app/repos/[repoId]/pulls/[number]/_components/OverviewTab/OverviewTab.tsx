@@ -2,13 +2,28 @@
 
 import React from "react";
 import { SectionLabel } from "@devdigest/ui";
+import { IntentCard } from "../IntentCard";
+import { BlastRadiusCard } from "../BlastRadiusCard";
 import { s } from "./styles";
 
 interface OverviewTabProps {
   prBody: string | null | undefined;
+  prId: string | null;
+  repoId: string | null;
+  /** Forwarded to BlastRadiusCard untouched — opens a caller's `file`:`line` as
+   *  of the commit `sha` (the index's, not the PR head's). The page owns the
+   *  destination (Diff tab vs GitHub); this tab only passes it through.
+   *  Optional, so the tab stays renderable without a host. */
+  onGoToLocation?: (file: string, line: number, sha: string | null) => void;
 }
 
-export function OverviewTab({ prBody }: OverviewTabProps) {
+/**
+ * Overview tab: PR description, then INTENT + BLAST RADIUS side by side.
+ * `IntentCard` moved here from FindingsTab so the two cards can share a
+ * two-column grid per the mockup (spec 0007-blast-radius.md §6.1) — it is
+ * no longer rendered in FindingsTab.
+ */
+export function OverviewTab({ prBody, prId, repoId, onGoToLocation }: OverviewTabProps) {
   return (
     <>
       {prBody && (
@@ -17,6 +32,15 @@ export function OverviewTab({ prBody }: OverviewTabProps) {
           <div style={s.descriptionBox}>{prBody}</div>
         </section>
       )}
+
+      <div style={s.grid}>
+        <div style={s.gridItem}>
+          <IntentCard prId={prId} />
+        </div>
+        <div style={s.gridItem}>
+          <BlastRadiusCard prId={prId} repoId={repoId} onGoToLocation={onGoToLocation} />
+        </div>
+      </div>
     </>
   );
 }

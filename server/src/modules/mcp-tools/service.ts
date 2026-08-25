@@ -1,4 +1,4 @@
-import type { CiFailOn } from '@devdigest/shared';
+import type { BlastRadius, CiFailOn } from '@devdigest/shared';
 import { NotFoundError, ValidationError } from '../../platform/errors.js';
 import {
   compactFinding,
@@ -34,6 +34,7 @@ export interface McpToolsDeps {
   repoRepo: RepoRepoPort;
   reviewRunner: ReviewRunner;
   conventionsReader: ConventionsReader;
+  blastReader: BlastReader;
   /** `LocalNoAuthProvider.currentWorkspace().id` — resolved OUTSIDE HTTP (no `FastifyRequest`). */
   workspaceId: () => Promise<string>;
 }
@@ -120,6 +121,19 @@ export interface ConventionsViewLike {
 /** Structural port over `ConventionsService.view` (constraint 2). */
 export interface ConventionsReader {
   view(workspaceId: string, repoId: string): Promise<ConventionsViewLike>;
+}
+
+/**
+ * Structural port over `BlastService.forPull` (constraint 2) — never an import
+ * of that class. Deliberately typed against the `BlastRadius` CONTRACT rather
+ * than a locally re-declared shape: `get_blast_radius` serves the contract
+ * verbatim, so re-spelling it here would create a second definition that could
+ * drift from `@devdigest/shared` without a compiler error. This is the same
+ * route `GET /pulls/:id/blast` serves — the tool adds resolution (`repo`+`pr` →
+ * `prId`) and nothing else, so the two can never disagree about the map itself.
+ */
+export interface BlastReader {
+  forPull(workspaceId: string, prId: string): Promise<BlastRadius>;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +310,28 @@ export class McpToolsService {
     };
   }
 
+  // -------------------------------------------------------- get_blast_radius
+
+  /**
+   * Serves the SAME `BlastRadius` the HTTP route does — `resolvePr` maps
+   * `repo`+`pr` onto the `prId` `BlastService.forPull` takes, and the result is
+   * returned untouched. No summarising, no filtering, and above all no
+   * flattening of `index_status`/`degraded`/`reason`: a model that cannot tell
+   * "the index is full and nothing calls this" from "the index is incomplete
+   * and the callers are unknown" would report an unmeasured blast radius as a
+   * safe one. That distinction is the whole point of the contract
+   * (`specs/0007-blast-radius.md` §4.2) and it survives the MCP boundary intact.
+   *
+   * Note there is no `NoReviewYetError` equivalent here: blast reads the
+   * repo-intel index, not a review, so it answers for a PR nobody has reviewed.
+   * A missing index is a degraded RESULT, never an error.
+   */
+  async getBlastRadius(repoInput: string, pr: number): Promise<BlastRadius> {
+    const workspaceId = await this.deps.workspaceId();
+    const { prId } = await this.resolvePr(workspaceId, repoInput, pr);
+    return this.deps.blastReader.forPull(workspaceId, prId);
+  }
+
   // ------------------------------------------------------------- internals
 
   private async resolveRepo(workspaceId: string, repoInput: string): Promise<RepoRowLike> {
@@ -356,6 +392,7 @@ export function mcpToolsDeps(container: {
   repoRepo: RepoRepoPort;
   reviewRunner: ReviewRunner;
   conventionsReader: ConventionsReader;
+  blastReader: BlastReader;
   workspaceId: () => Promise<string>;
 }): McpToolsDeps {
   return {
@@ -364,6 +401,7 @@ export function mcpToolsDeps(container: {
     repoRepo: container.repoRepo,
     reviewRunner: container.reviewRunner,
     conventionsReader: container.conventionsReader,
+    blastReader: container.blastReader,
     workspaceId: container.workspaceId,
   };
 }

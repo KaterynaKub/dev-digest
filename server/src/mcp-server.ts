@@ -15,6 +15,7 @@ import { Container } from './platform/container.js';
 import { buildReviewDeps } from './modules/reviews/routes.js';
 import { ReviewService } from './modules/reviews/service.js';
 import { ConventionsService, conventionsDeps } from './modules/conventions/service.js';
+import { BlastService, blastDeps } from './modules/blast/service.js';
 import { McpToolsService, mcpToolsDeps } from './modules/mcp-tools/service.js';
 import { createMcpServer } from './mcp/server-factory.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -35,6 +36,13 @@ async function main() {
     }),
   );
 
+  // The same service `blastRoutes` builds for `GET /pulls/:id/blast` — the two
+  // surfaces share one implementation rather than each assembling the map, so
+  // `get_blast_radius` cannot drift from the HTTP route it mirrors (0007 §8).
+  const blastService = new BlastService(
+    blastDeps({ blastRepo: container.blastRepo, repoIntel: container.repoIntel }),
+  );
+
   const toolsService = new McpToolsService(
     mcpToolsDeps({
       agentsRepo: container.agentsRepo,
@@ -42,6 +50,7 @@ async function main() {
       repoRepo: container.repoRepo,
       reviewRunner: reviewService,
       conventionsReader: conventionsService,
+      blastReader: blastService,
       // No FastifyRequest exists on this path — LocalNoAuthProvider ignores
       // its argument and always resolves the seeded default workspace
       // (adapters/auth/local.ts), so `undefined` is a valid call here.

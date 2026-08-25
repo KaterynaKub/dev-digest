@@ -266,3 +266,75 @@ render exercises the path: `Element.prototype.scrollIntoView = vi.fn();`. It
 is a prototype-level stub shared across tests in the file — reset call counts
 with `beforeEach(() => vi.mocked(Element.prototype.scrollIntoView).mockClear())`
 when a test asserts call counts (e.g. "scrolls again on a nonce bump").
+
+## Trap: `gridTemplateColumns: "1fr 1fr"` does not make two grid columns equal width when a child has unbreakable content
+
+**Found:** 2026-08-13 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab
+
+`OverviewTab`'s two-column grid (`INTENT` + `BLAST RADIUS`) uses `1fr 1fr`,
+which splits the *available* track space evenly but does not cap a track's
+minimum: every grid item defaults to `min-width: auto`, meaning it cannot
+shrink below its longest unbreakable content box. `BlastRadiusCard` always
+has such content — a file path (`src/api/public/index.ts:23`), an endpoint
+badge, a long symbol name — so that one row pushes its whole column past 50%,
+and the "equal" grid visibly isn't. Fixing only the grid item
+(`minWidth: 0` on the wrapping div, which resets the `auto` floor) is not
+enough by itself: without a place for the long content to break
+(`overflowWrap: "anywhere"` on the text cells, `whiteSpace: "normal"` to
+override `Badge`'s own `nowrap` default), the column snaps to 50% but the
+content then overflows it horizontally instead — a different, equally visible
+bug. Both halves are required together, and neither shows up in a typecheck
+or lint pass since this is pure layout behavior.
+
+## Trap: `@testing-library/user-event` is NOT installed — every existing test uses `fireEvent`
+
+**Found:** 2026-08-13 · **Applies to:** package.json, src/**/*.test.tsx
+
+`react-testing-library` skill guidance (and most RTL tutorials) default to
+`userEvent.setup()` for interactions, but this package's `package.json` only
+lists `@testing-library/jest-dom` and `@testing-library/react` — no
+`@testing-library/user-event`. Importing it fails at collection time with
+Vite's `Failed to resolve import "@testing-library/user-event"`, which reads
+as a broken test file rather than a missing dependency (the error names the
+importing test, not the package). Every existing test in this repo
+(`SmartDiffSection.test.tsx` and others) already uses
+`fireEvent` from `@testing-library/react` for clicks — follow that pattern,
+not the skill's default, unless a future task explicitly adds the dependency
+via a real `pnpm add` (never assume it is present).
+
+## Trap: the `sd-<path>-<line>` row id exists ONLY on finding-covered rows — it cannot anchor arbitrary code
+
+**Found:** 2026-08-13 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/SmartDiffSection
+
+`SmartDiffLine` renders `id={coverage ? \`sd-${path}-${ln.newNo}\` : undefined}`,
+so a row only becomes addressable once a finding covers it. That is invisible
+when you are navigating *from* a finding (`goToFinding` always targets a covered
+line), and it silently breaks the moment you navigate from anything else —
+Blast Radius callers are ordinary code and usually carry no finding at all, so
+`getElementById(\`sd-…\`)` returns null and the scroll is a no-op with no error.
+Rows now also carry `data-line={ln.newNo}` unconditionally for that case; query
+by `[data-line="N"]` when the target is not known to be a finding.
+
+Reaching the row needs two reveals first, in order: the GROUP must be open (a
+closed group never mounts its file cards, and `boilerplate` is closed by
+default, so a caller there is unreachable), then the FILE card must be open (its
+`useState` initialiser only opens files that already have findings — which a
+caller's file typically does not). Opening the group has to happen in
+`SmartDiffSection` itself, since a card inside a collapsed group is not mounted
+to react to anything.
+
+## Trap: a per-child object built inline in JSX makes the child's effects re-fire every render
+
+**Found:** 2026-08-13 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/SmartDiffSection
+
+Passing `target={targetLocation?.file === sdFile.path ? { line, nonce } : null}`
+to each `SmartDiffFileCard` looks like harmless narrowing, but it allocates a
+new object on every parent render, so any child effect depending on `target`
+re-runs continuously — here that meant re-scrolling the page away from wherever
+the reviewer had moved. Listing `target?.line, target?.nonce` in the dep array
+instead avoids the loop but trades it for an `exhaustive-deps` warning (this
+package's lint baseline is 0 errors / 3 pre-existing warnings, so a new one is a
+regression). Pass the shared object down whole and let the child narrow it
+(`const isTargeted = target?.file === sdFile.path ? target : null`): the
+identity is then stable across renders, the effect depends on one value, and
+the lint rule is satisfied without a disable comment.

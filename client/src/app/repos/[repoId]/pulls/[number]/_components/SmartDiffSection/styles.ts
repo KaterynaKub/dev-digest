@@ -262,6 +262,25 @@ export const s = {
     overflow: "hidden",
   } as CSSProperties,
 
+  /**
+   * Transient highlight on the row a Blast Radius caller navigated to. Uses
+   * `outline`, not a border or a background: the target row may ALSO be covered
+   * by a finding (`markLineExtra` already owns its `backgroundImage`,
+   * `borderLeft` and `boxShadow`), and an outline is the one affordance that
+   * layers on top without overwriting any of them or changing the row's box —
+   * the same 1px height drift `markBadgeSlot` exists to prevent.
+   *
+   * `outlineOffset: -1` draws it just inside the row so it is not clipped by the
+   * file card's `overflow: hidden`.
+   */
+  targetRow: {
+    outlineStyle: "solid",
+    outlineWidth: 2,
+    outlineColor: "var(--accent)",
+    outlineOffset: -1,
+    borderRadius: 3,
+  } satisfies CSSProperties,
+
   // Button reset for the mark badge when it navigates (onGoToFinding
   // supplied) — longhand border, no new colour, inherits the Badge's own look.
   markButton: {
