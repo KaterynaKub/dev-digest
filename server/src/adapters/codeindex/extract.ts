@@ -174,12 +174,30 @@ export function extractReferences(content: string, symbol: string): ExtractedRef
   return out;
 }
 
+/** Caps how many facts one file may contribute, so a generated route table
+ *  cannot dominate a blast-radius view. `0` disables the cap. */
+export interface ExtractFactsOptions {
+  limit?: number;
+}
+
+const DEFAULT_FACT_LIMIT = 64;
+
+/** Apply an ExtractFactsOptions cap to a collected fact set. */
+function capFacts(values: Set<string>, opts: ExtractFactsOptions): string[] {
+  const limit = opts.limit ?? DEFAULT_FACT_LIMIT;
+  const all = [...values];
+  return limit > 0 ? all.slice(0, limit) : all;
+}
+
 /**
  * Heuristic endpoint detector: HTTP route registrations in a file.
  * Catches Fastify/Express style `app.get('/path', ...)`, `router.post(...)`,
  * `app.get<...>('/path')`, and `route({ method, url })`. Returns "METHOD /path".
+ *
+ * The options argument is OPTIONAL — existing single-argument callers are
+ * unaffected and keep the default cap.
  */
-export function extractEndpoints(content: string): string[] {
+export function extractEndpoints(content: string, opts: ExtractFactsOptions = {}): string[] {
   const out = new Set<string>();
   const lines = content.split('\n');
   const verbRe =
@@ -191,15 +209,18 @@ export function extractEndpoints(content: string): string[] {
     const r = raw.match(routeObjRe);
     if (r) out.add(`${r[1]!.toUpperCase()} ${r[2]}`);
   }
-  return [...out];
+  return capFacts(out, opts);
 }
 
 /**
  * Heuristic cron/scheduled-job detector. Catches cron expressions in
  * `schedule('* * * * *')`, `cron.schedule(...)`, `CronJob(...)`, and
  * `jobs.register('kind')` / `enqueue(ws, 'kind')` style background work.
+ *
+ * The options argument is OPTIONAL — existing single-argument callers are
+ * unaffected and keep the default cap.
  */
-export function extractCrons(content: string): string[] {
+export function extractCrons(content: string, opts: ExtractFactsOptions = {}): string[] {
   const out = new Set<string>();
   const lines = content.split('\n');
   const cronExprRe = /\b(?:cron|schedule|CronJob)\s*[.(]?\s*\(?\s*['"`]([^'"`]*(?:\*|\d+\s+\d+)[^'"`]*)['"`]/i;
@@ -210,5 +231,5 @@ export function extractCrons(content: string): string[] {
     const j = raw.match(jobKindRe);
     if (j && /poll|index|clone|digest|cron|sync|schedule|job/i.test(raw)) out.add(`job:${j[1]}`);
   }
-  return [...out];
+  return capFacts(out, opts);
 }
