@@ -8,6 +8,7 @@ import {
   timestamp,
   doublePrecision,
   index,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { now } from './_shared';
 import { workspaces } from './core';
@@ -80,9 +81,35 @@ export const prIntent = pgTable('pr_intent', {
   derivedAt: timestamp('derived_at', { withTimezone: true }).defaultNow(),
 });
 
-export const prBrief = pgTable('pr_brief', {
-  prId: uuid('pr_id')
-    .primaryKey()
-    .references(() => pullRequests.id, { onDelete: 'cascade' }),
-  json: jsonb('json').notNull(),
-});
+export const prBrief = pgTable(
+  'pr_brief',
+  {
+    // No longer the primary key alone (0003 — Why Timeline): a PR now retains
+    // up to `MAX_BRIEF_HISTORY` briefs, one per distinct (head_sha, indexed_sha)
+    // it was generated against, so `prId` stays a required FK but the row
+    // identity moves to the composite key below.
+    prId: uuid('pr_id')
+      .notNull()
+      .references(() => pullRequests.id, { onDelete: 'cascade' }),
+    json: jsonb('json').notNull(),
+    // Cache key (AC-27): the PR head sha this brief's diff-derived input was
+    // assembled from.
+    headSha: text('head_sha').notNull(),
+    // Cache key (AC-27), continued. Nullable — AC-28's distinct key value: a
+    // repository with no index produces a brief keyed by `indexed_sha: null`,
+    // which must never be served for a state that later gains one. Every read
+    // uses THIS column, never `indexedShaKey`.
+    indexedSha: text('indexed_sha'),
+    // PK stand-in for `indexedSha` (0003): Postgres forbids NULL in a PRIMARY
+    // KEY, so this column normalises the nullable `indexed_sha` to `''` (not a
+    // valid sha, so unambiguous) purely to give `onConflictDoUpdate` a single
+    // inferable arbiter. Never read for currency — `indexedSha` carries the
+    // real semantics (AC-28).
+    indexedShaKey: text('indexed_sha_key').notNull().default(''),
+    generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.prId, t.headSha, t.indexedShaKey] }),
+    prIdx: index('pr_brief_pr_idx').on(t.prId),
+  }),
+);

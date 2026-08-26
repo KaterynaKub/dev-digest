@@ -165,8 +165,10 @@ describe("BlastRadiusCard", () => {
     fireEvent.click(locationButton);
 
     // The sha travels with the coordinates: a line number is only meaningful
-    // against the commit the indexer recorded it in.
-    expect(onGoToLocation).toHaveBeenCalledWith("b.ts", 10, "abc1234def");
+    // against the commit the indexer recorded it in. `"index"` is this card's
+    // fixed pin (contrast PrBriefCard's `"head"`) — it tells the host that
+    // staleness applies, unlike a brief's diff-derived coordinates (AC-45).
+    expect(onGoToLocation).toHaveBeenCalledWith("b.ts", 10, "abc1234def", "index");
     // The card decides nothing about WHERE this opens — no tab, no URL, and in
     // particular no github.com link of its own (the host owns that choice).
     expect(document.querySelector('a[href*="github.com"]')).not.toBeInTheDocument();

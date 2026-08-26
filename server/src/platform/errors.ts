@@ -39,3 +39,9 @@ export class ConfigError extends AppError {
     super('config_error', message, 500, details);
   }
 }
+
+export class ConflictError extends AppError {
+  constructor(message = 'Conflicting operation already in progress', details?: unknown) {
+    super('conflict', message, 409, details);
+  }
+}

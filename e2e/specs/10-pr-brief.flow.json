@@ -1,0 +1,22 @@
+{
+  "name": "PR Brief card renders the seeded risk level and review focus, and a focus entry navigates into Files changed",
+  "description": "From PR #482's Overview tab, confirm the seeded PR Brief card renders above the Intent/Blast Radius grid: its risk level ('High risk'), all three seeded REVIEW FOCUS entries (including one kept without a line, AC-25), and the zero-cost provenance line ('$0', not 'Cost unknown' — AC-9/AC-10). Clicking the focus entry for src/config.ts:12 (the only seeded file with a real patch) switches to the Files changed tab and reveals that exact diff row. Read-only seeded data (server/src/db/seed.ts writes the pr_brief row directly) — never triggers POST /pulls/:id/brief/generate. Assumes a freshly-seeded DB where acme/payments-api (PR #482) is the first repo (see e2e/README.md).",
+  "steps": [
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open the PR row" },
+    { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Overview"], "label": "switch to the Overview tab" },
+    { "cmd": ["wait", "--text", "PR Brief"], "label": "PR Brief card title is visible" },
+    { "cmd": ["wait", "--text", "High risk"], "label": "seeded risk level renders as a text label" },
+    { "cmd": ["wait", "--text", "Review focus"], "label": "review focus section heading is visible" },
+    { "cmd": ["wait", "--text", "src/config.ts:12"], "label": "first review-focus entry shows file and line" },
+    { "cmd": ["wait", "--text", "src/api/users.ts:45"], "label": "second review-focus entry shows file and line" },
+    { "cmd": ["wait", "--text", "src/middleware/ratelimit.ts"], "label": "third review-focus entry (no line, AC-25) renders the file with no line number" },
+    { "cmd": ["wait", "--text", "$0"], "label": "zero-cost provenance renders as a price, not 'Cost unknown' (AC-9, AC-10)" },
+    { "cmd": ["find", "role", "button", "click", "--name", "src/config.ts:12"], "label": "click the review-focus entry into its diff location" },
+    { "cmd": ["wait", "--url", "tab=diff"], "label": "Files changed tab is active in the URL" },
+    { "cmd": ["wait", "--text", "stripeSecretKey"], "label": "the diff row the entry points at is actually reached (its group and file card are open)" }
+  ]
+}

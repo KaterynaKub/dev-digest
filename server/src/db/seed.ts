@@ -278,11 +278,32 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       })
       .returning();
 
-    // pr_files (subset)
+    // pr_files (subset). `src/config.ts` carries a real `patch` (the others
+    // don't) so the diff viewer has at least one file with addressable rows —
+    // e2e flow 10 clicks a PR Brief review-focus entry into this exact line.
     await db.insert(t.prFiles).values([
       { prId: pr!.id, path: 'src/middleware/ratelimit.ts', additions: 84, deletions: 0 },
       { prId: pr!.id, path: 'src/api/public/webhooks.ts', additions: 31, deletions: 6 },
-      { prId: pr!.id, path: 'src/config.ts', additions: 4, deletions: 0 },
+      {
+        prId: pr!.id,
+        path: 'src/config.ts',
+        additions: 4,
+        deletions: 0,
+        // Hunk's new side starts at line 8, so the added Stripe key lands at
+        // EXACTLY new-line 12 — matching the seeded finding's `startLine: 12`
+        // below, so a click into either one lands on the same real diff row.
+        patch:
+          '@@ -8,4 +8,7 @@\n' +
+          ' export const config = {\n' +
+          '   port: process.env.PORT || 3000,\n' +
+          '   env: process.env.NODE_ENV || "development",\n' +
+          '   name: "payments-api",\n' +
+          '+  stripeSecretKey: "sk_live_xxx",\n' +
+          '+  rateLimitWindowMs: 60_000,\n' +
+          '+  rateLimitMax: 100,\n' +
+          '   dbUrl: process.env.DATABASE_URL,\n' +
+          ' };\n',
+      },
       { prId: pr!.id, path: 'src/api/users.ts', additions: 7, deletions: 2 },
     ]);
 
@@ -335,6 +356,83 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
         confidence: 0.86,
       },
     ]);
+
+    // ---- pr_brief (PR Why + Risk Brief, SPEC-02) ----
+    // No precedent to follow here — pr_intent isn't seeded either — so this
+    // establishes the pattern: `head_sha` pins to the PR's own head (never
+    // stale), `risk_level` is deliberately not the blandest option, and every
+    // `risks[].file_refs` / `review_focus[].file` names a path that genuinely
+    // exists in the `pr_files` seeded above (AC-20's reference validation is
+    // otherwise untestable and the card would render a rejected entry). This
+    // is the one read-only fixture that unblocks e2e coverage for the PR
+    // Brief card (see `../../e2e/INSIGHTS.md`'s now-superseded trap entry) —
+    // a seeded row means the flow never has to call `POST …/brief/generate`.
+    const briefBody = {
+      what: 'Adds token-bucket rate limiting to public API endpoints.',
+      why: 'Prevents abuse from unauthenticated clients hitting shared infrastructure.',
+      risk_level: 'high',
+      risks: [
+        {
+          kind: 'security',
+          title: 'Secret committed in plaintext',
+          explanation: 'A live Stripe secret key is committed directly in the config file.',
+          severity: 'high',
+          file_refs: ['src/config.ts'],
+        },
+        {
+          kind: 'performance',
+          title: 'N+1 query under the new limiter',
+          explanation: 'The user-list endpoint issues one query per user once rate limiting adds overhead per request.',
+          severity: 'medium',
+          file_refs: ['src/api/users.ts', 'src/middleware/ratelimit.ts'],
+        },
+        {
+          kind: 'availability',
+          title: 'Shared limiter state has no eviction policy',
+          explanation: 'The token-bucket store grows unbounded with no TTL, risking memory pressure under sustained traffic.',
+          severity: 'low',
+          file_refs: ['src/middleware/ratelimit.ts'],
+        },
+      ],
+      review_focus: [
+        { file: 'src/config.ts', line: 12, reason: 'Stripe secret key committed in plaintext — rotate immediately' },
+        { file: 'src/api/users.ts', line: 45, reason: 'N+1 query introduced under the new limiter' },
+        // A verified-but-unresolvable-to-a-line entry: the reference survived
+        // grounding (it names a real file) but the model gave no line, so it
+        // is KEPT with a null line rather than dropped (AC-25).
+        { file: 'src/middleware/ratelimit.ts', line: null, reason: 'Review the eviction policy for the token-bucket store' },
+      ],
+    } as const;
+
+    const briefProvenance = {
+      indexed_sha: null,
+      index_stale: false,
+      generated_at: new Date().toISOString(),
+      missing_inputs: [],
+      selected_docs: [],
+      dropped_docs: [],
+      dropped_sections: [],
+      rejected_entries: [],
+      model: 'seed',
+      provider: 'seed',
+      tokens_in: 2100,
+      tokens_out: 340,
+      // AC-9/AC-10 trap, pinned deliberately: `0` is a real price and must
+      // render as one, never as "unknown" (server/INSIGHTS.md#L39).
+      cost_usd: 0,
+      cost_source: 'exact',
+      retries: 0,
+    };
+
+    await db.insert(t.prBrief).values({
+      prId: pr!.id,
+      // `json` carries the body + the provenance fields NOT promoted to real
+      // columns — mirrors `BriefRepository.upsertBrief`'s split exactly.
+      json: { body: briefBody, provenance: briefProvenance },
+      headSha: pr!.headSha,
+      indexedSha: null,
+      generatedAt: new Date(briefProvenance.generated_at),
+    });
   }
 
   // ---- built-in agents (the three starter presets) ----

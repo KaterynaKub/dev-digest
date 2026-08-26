@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Finding, Verdict } from './findings.js';
-import { Intent, SmartDiff } from './brief.js';
+import { Intent, SmartDiff, PrBrief, BriefProvenance, BriefTimelineEntry } from './brief.js';
 
 /**
  * A2 — Review-Core API surface contracts. These extend the core
@@ -75,3 +75,33 @@ export type IntentDeriveRequest = z.infer<typeof IntentDeriveRequest>;
 /** Smart-diff response for a PR (the SmartDiff). */
 export const SmartDiffResponse = SmartDiff;
 export type SmartDiffResponse = z.infer<typeof SmartDiffResponse>;
+
+/**
+ * A persisted PR brief (SPEC-02): the model-generated `PrBrief` plus the
+ * provenance that lets a client decide whether it is current (AC-29, AC-30)
+ * and render its cost, cache key, and degradation state (AC-34, AC-41).
+ * Response of `GET /pulls/:id/brief`; `null` when no brief has ever been
+ * generated (AC-51).
+ */
+export const PrBriefRecord = PrBrief.extend({
+  pr_id: z.string(),
+  provenance: BriefProvenance,
+});
+export type PrBriefRecord = z.infer<typeof PrBriefRecord>;
+
+/**
+ * Response of `GET /pulls/:id/brief/timeline` (0003) — the retained brief
+ * history, newest first. An object rather than a bare array, matching
+ * `ContextDocReader.listDocuments`'s `{ docs }` shape and leaving room for a
+ * future `truncated` flag without a breaking change.
+ */
+export const BriefTimelineResponse = z.object({
+  entries: z.array(BriefTimelineEntry),
+});
+export type BriefTimelineResponse = z.infer<typeof BriefTimelineResponse>;
+
+/** Body for POST /pulls/:id/brief/generate. Always regenerates (AC-31); no
+ *  fields today, kept as an object (not `.optional()`) so a future field
+ *  (e.g. an explicit `force`) is additive, matching `IntentDeriveRequest`. */
+export const BriefGenerateRequest = z.object({}).optional();
+export type BriefGenerateRequest = z.infer<typeof BriefGenerateRequest>;

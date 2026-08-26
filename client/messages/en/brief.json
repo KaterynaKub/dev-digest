@@ -1,15 +1,51 @@
 {
-  "block": {
-    "intent": "Intent",
-    "blast": "Blast radius",
-    "risks": "Risks",
-    "history": "PR history"
+  "title": "PR Brief",
+  "modelGenerated": "Model-generated",
+  "riskLevel": {
+    "label": "Brief risk",
+    "high": "High risk",
+    "medium": "Medium risk",
+    "low": "Low risk"
   },
-  "noRisks": "No notable risks flagged.",
-  "noHistory": "No prior PRs overlap these files.",
-  "overlap": "{count} overlap",
-  "unavailable": "Brief not available yet.",
-  "unavailableHint": "Run a review or open the PR to compute it.",
+  "section": {
+    "risks": "Risks",
+    "reviewFocus": "Review focus — read these first"
+  },
+  "empty": {
+    "title": "No brief yet",
+    "body": "Generate a short synthesis of what this PR changes, why, and where to look first.",
+    "spendWarning": "Generating a brief calls the model and spends money.",
+    "cta": "Generate brief"
+  },
+  "generating": "Generating brief…",
+  "regenerate": "Regenerate",
+  "regenerating": "Regenerating…",
+  "failed": {
+    "title": "Brief could not be generated",
+    "reasonPrefix": "Reason:"
+  },
+  "metadataOnly": "The model was given file metadata only — no diff content.",
+  "missingInputs": "Built without some inputs:",
+  "staleIndex": "This brief's impact information describes an older commit than the diff under review.",
+  "rejectedEntries": "At least one reference was rejected as invented:",
+  "allRejected": "No risk or review-focus reference survived validation.",
+  "documents": {
+    "label": "Documents used"
+  },
+  "cost": {
+    "unknown": "Cost unknown",
+    "tokens": "{tokensIn} in → {tokensOut} out tokens"
+  },
+  "headSha": "Head {sha}",
+  "generatedAt": "Generated {time}",
+  "timeline": {
+    "title": "Why Timeline",
+    "loading": "Loading brief history…",
+    "current": "Current",
+    "stale": "Stale",
+    "notCurrent": "This brief describes an earlier commit or index than the PR's current state.",
+    "empty": "No brief history yet."
+  },
   "why": {
     "title": "git-why",
     "blame": "blame",

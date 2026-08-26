@@ -42,8 +42,13 @@ export interface BlastRadiusCardProps {
    * Optional: without it the `file:line` renders as the plain text it always
    * was, so the card stays renderable outside a navigation host (same idiom as
    * `SmartDiffSection#onGoToFinding`).
+   *
+   * `pin` is always passed as `"index"` by this card — its coordinates come
+   * from the repo-intel indexer, never from the diff (contrast `PrBriefCard`,
+   * which always passes `"head"`). The host's `goToLocation` uses it to decide
+   * whether staleness applies at all.
    */
-  onGoToLocation?: (file: string, line: number, sha: string | null) => void;
+  onGoToLocation?: (file: string, line: number, sha: string | null, pin: "index" | "head") => void;
 }
 
 type ViewMode = "tree" | "graph";
@@ -212,7 +217,7 @@ export function BlastRadiusCard({ prId, repoId, onGoToLocation }: BlastRadiusCar
               callerCountLabel={t("callerCount", { count: symbol.callers.length })}
               onGoToLocation={
                 onGoToLocation
-                  ? (file, line) => onGoToLocation(file, line, data.indexed_sha ?? null)
+                  ? (file, line) => onGoToLocation(file, line, data.indexed_sha ?? null, "index")
                   : undefined
               }
               openLocationLabel={(file, line) => t("openLocation", { file, line })}

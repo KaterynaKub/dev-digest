@@ -195,11 +195,114 @@ export const SmartDiff = z.object({
 });
 export type SmartDiff = z.infer<typeof SmartDiff>;
 
+// ---- Review focus (PR Why + Risk Brief, SPEC-02) ----
+/**
+ * One "read this first" entry. `line` is `nullable`, not `nullish` — the
+ * validator (server `modules/brief/helpers.ts#validateReferences`) builds this
+ * object field by field, so an out-of-hunk line is an ANSWERED `null` rather
+ * than an omitted field (AC-25). `file` must be a path present in the brief's
+ * own input data (AC-20); an entry naming an absent file or endpoint is
+ * dropped whole, never partially kept (AC-22).
+ */
+export const ReviewFocusEntry = z.object({
+  file: z.string(),
+  line: z.number().int().nullable(),
+  reason: z.string(),
+});
+export type ReviewFocusEntry = z.infer<typeof ReviewFocusEntry>;
+
+/**
+ * Everything about HOW a brief was produced, distinct from what it says
+ * (`what`/`why`/`risk_level`/`risks`/`review_focus`). Carries the cache key
+ * (`head_sha` + `indexed_sha`, AC-27/AC-28), the degradation record
+ * (`missing_inputs`, AC-35/AC-36/AC-38/AC-41), the document-selection audit
+ * trail (`selected_docs`/`dropped_docs`, AC-18), the rejected-reference record
+ * (`rejected_entries`, AC-22/AC-23/AC-24), and the model/cost observability
+ * fields (AC-7/AC-8, NFR-15).
+ */
+export const BriefProvenance = z.object({
+  /** PR head sha the brief's diff-derived input was assembled from. */
+  head_sha: z.string(),
+  /**
+   * `nullable`, not `nullish` — an absent index is a DISTINCT key value
+   * (AC-28), not an omitted field. Mirrors `BlastRadius.indexed_sha`.
+   */
+  indexed_sha: z.string().nullable(),
+  /** true when the blast radius this brief consumed reported `index_stale` (AC-37). */
+  index_stale: z.boolean(),
+  generated_at: z.string(),
+  /** Plain-language notes on inputs absent from this generation (AC-35, AC-36, AC-38, AC-41). */
+  missing_inputs: z.array(z.string()),
+  /** Repo-relative path + rank of every document actually selected (AC-18, AC-19, NFR-14). */
+  selected_docs: z.array(z.object({ path: z.string(), rank: z.number().int() })),
+  /** Every candidate document dropped by a selection limit, and which one (AC-15, AC-16, AC-18). */
+  dropped_docs: z.array(
+    z.object({ path: z.string(), limit: z.enum(['count', 'tokens']) }),
+  ),
+  /**
+   * NFR-24: labels of whole SECTIONS dropped from the assembled input to fit
+   * `MAX_BRIEF_INPUT_TOKENS` (tokenizer-counted tokens of the assembled user
+   * message, excluding the system prompt) — never a partial section. A
+   * document section's label is `document:<path>`; the fixed non-document
+   * labels are `changed-files`, `derived-intent`, `blast-radius`,
+   * `pr-title-body`, `linked-issue`. Distinct from `dropped_docs`, which
+   * records a document dropped from CANDIDATE SELECTION before assembly,
+   * not from the assembled input's token budget.
+   */
+  dropped_sections: z.array(z.string()),
+  /** Every risk/review-focus entry the model proposed but code rejected, and why (AC-22, AC-23, AC-24). */
+  rejected_entries: z.array(z.object({ entry: z.string(), reason: z.string() })),
+  model: z.string(),
+  provider: z.string(),
+  /**
+   * Nullable, not optional — the fields below are answered from
+   * `StructuredResult` field by field. `?? null`, never `|| null`: `0` is a
+   * real token count / a real price, not an absent one (server/INSIGHTS.md on
+   * `costUsd`).
+   */
+  tokens_in: z.number().int().nullable(),
+  tokens_out: z.number().int().nullable(),
+  cost_usd: z.number().nullable(),
+  cost_source: z.string().nullable(),
+  retries: z.number().int(),
+});
+export type BriefProvenance = z.infer<typeof BriefProvenance>;
+
 // ---- Composed PR Brief (pr_brief.json) ----
+/**
+ * Redefinition, not an extension (Module interactions, SPEC-02): the previous
+ * `{ intent, blast, risks, history }` shape had no consumer in either package.
+ * The model produces `what`/`why`/`risk_level`/`risks`/`review_focus`
+ * (NFR-13); `RiskSeverity` and `Risk` are reused as-is.
+ */
 export const PrBrief = z.object({
-  intent: Intent,
-  blast: BlastRadius,
-  risks: Risks,
-  history: PrHistory,
+  what: z.string(),
+  why: z.string(),
+  risk_level: RiskSeverity,
+  risks: z.array(Risk),
+  review_focus: z.array(ReviewFocusEntry),
 });
 export type PrBrief = z.infer<typeof PrBrief>;
+
+// ---- Why Timeline (0003) ----
+/**
+ * One trimmed entry in a PR's brief history — "how the intent changed across
+ * commits", not a full brief. Keyed by the commit it describes (`head_sha` +
+ * `indexed_sha`), not by an id — a same-key regeneration replaces this entry
+ * rather than appending a new one (0003 Requirements review).
+ */
+export const BriefTimelineEntry = z.object({
+  head_sha: z.string(),
+  /**
+   * `nullable`, not `nullish` — an absent index is an ANSWERED `null`
+   * (AC-28), mirroring `BriefProvenance.indexed_sha`.
+   */
+  indexed_sha: z.string().nullable(),
+  generated_at: z.string(),
+  risk_level: RiskSeverity,
+  what: z.string(),
+  /** true when this entry matches the PR's current head sha AND the blast
+   *  radius's current indexed_sha — same rule as `PrBriefRecord.is_current`. */
+  is_current: z.boolean(),
+});
+export type BriefTimelineEntry = z.infer<typeof BriefTimelineEntry>;

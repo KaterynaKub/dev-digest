@@ -8,7 +8,9 @@ import { api, API_BASE } from "../api";
 import { notify } from "../toast";
 import type {
   BlastRadius,
+  BriefTimelineResponse,
   FindingActionKind,
+  PrBriefRecord,
   PrIntentRecord,
   PrReviewComment,
   ReviewRecord,
@@ -157,6 +159,48 @@ export function useDeriveIntent(prId: string | null | undefined) {
   return useMutation({
     mutationFn: () => api.post<PrIntentRecord>(`/pulls/${prId}/intent/derive`, { force: true }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pr-intent", prId] }),
+  });
+}
+
+// ---- PR Brief (why + risk synthesis, SPEC-02) ----
+/** A stored brief, tagged with whether it still matches the PR's current head
+ *  sha and the blast radius's current indexed_sha (AC-27…AC-30). `null` before
+ *  the first generation (AC-51) — same "row or null" shape as `useIntent`. */
+export type BriefRecord = PrBriefRecord & { is_current: boolean };
+
+/** Persisted brief for a PR — the row only, no model call (AC-29). */
+export function useBrief(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["pr-brief", prId],
+    queryFn: () => api.get<BriefRecord | null>(`/pulls/${prId}/brief`),
+    enabled: !!prId,
+  });
+}
+
+/** (Re)generate the brief (AC-31). Spends money — same cost profile as
+ *  `useDeriveIntent`. The server always regenerates; there is no `force` flag
+ *  to pass (unlike intent). */
+export function useGenerateBrief(prId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<PrBriefRecord | { empty: true }>(`/pulls/${prId}/brief/generate`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pr-brief", prId] });
+      // A fresh generation appends a new timeline entry (0003 — Why Timeline);
+      // without this the timeline keeps showing the pre-generation history
+      // until an unrelated refetch happens to invalidate it.
+      qc.invalidateQueries({ queryKey: ["pr-brief-timeline", prId] });
+    },
+  });
+}
+
+/** Retained brief history for a PR, newest-first, capped server-side at
+ *  `MAX_BRIEF_HISTORY` (0003 — Why Timeline). Read-only, no model call. */
+export function useBriefTimeline(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["pr-brief-timeline", prId],
+    queryFn: () => api.get<BriefTimelineResponse>(`/pulls/${prId}/brief/timeline`),
+    enabled: !!prId,
   });
 }
 

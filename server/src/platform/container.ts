@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import type {
   AuthProvider,
   SecretsProvider,
@@ -9,6 +10,7 @@ import type {
   HttpFetcher,
   Tokenizer,
 } from '@devdigest/shared';
+import { ContextRoots } from '@devdigest/shared';
 import type { AppConfig } from './config.js';
 import type { Db } from '../db/client.js';
 import { JobRunner } from './jobs.js';
@@ -41,6 +43,17 @@ import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService, repoIntelDeps } from '../modules/repo-intel/service.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
 import { TiktokenTokenizer } from '../adapters/tokenizer/index.js';
+import { BlastService, blastDeps } from '../modules/blast/service.js';
+import { ProjectContextService } from '../modules/project-context/service.js';
+import { BriefRepository } from '../modules/brief/repository.js';
+import type { BlastReader, ContextDocReader } from '../modules/brief/service.js';
+import { rowsToSettings } from '../modules/settings/helpers.js';
+import * as t from '../db/schema.js';
+
+/** Same default `settings/feature-models.ts#DEFAULT_CONTEXT_ROOTS` uses — kept
+ *  here rather than imported, since importing that module (which type-imports
+ *  `Container`) would create a `no-circular` warning through this file. */
+const DEFAULT_CONTEXT_ROOTS = ['specs/', 'docs/', 'insights/'];
 
 /**
  * DI container. One per app instance. Holds config, db, the JobRunner,
@@ -95,10 +108,18 @@ export class Container {
   private _smartDiffRepo?: SmartDiffRepository;
   private _blastRepo?: BlastRepository;
   private _projectContextRepo?: ProjectContextRepository;
+  private _briefRepo?: BriefRepository;
   private _repoIntel?: RepoIntel;
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
   private _priceBook?: PriceBook;
+  // Brief's two structural ports (BlastReader, ContextDocReader) are satisfied
+  // by real service instances constructed HERE — the sanctioned composition
+  // root — never in `brief/routes.ts`, which `no-cross-module-service`
+  // (severity error) forbids from importing `BlastService`/
+  // `ProjectContextService` directly.
+  private _blastReader?: BlastReader;
+  private _contextDocReader?: ContextDocReader;
   private _httpFetcher?: HttpFetcher;
 
   constructor(config: AppConfig, db: Db, private overrides: ContainerOverrides = {}) {
@@ -158,6 +179,54 @@ export class Container {
 
   get projectContextRepo(): ProjectContextRepository {
     return (this._projectContextRepo ??= new ProjectContextRepository(this.db));
+  }
+
+  get briefRepo(): BriefRepository {
+    return (this._briefRepo ??= new BriefRepository(this.db));
+  }
+
+  /**
+   * Structural `BlastReader` port for `brief/service.ts`, satisfied by the
+   * SAME `BlastService` instance `blast/routes.ts` builds for
+   * `GET /pulls/:id/blast` — one implementation, never re-assembled.
+   */
+  get blastReader(): BlastReader {
+    return (this._blastReader ??= new BlastService(
+      blastDeps({ blastRepo: this.blastRepo, repoIntel: this.repoIntel }),
+    ));
+  }
+
+  /**
+   * Structural `ContextDocReader` port for `brief/service.ts`. Reads the
+   * workspace's `context_roots` setting fresh on every call — same
+   * fail-open-to-defaults parse `settings/feature-models.ts#readContextRoots`
+   * applies, reimplemented locally (rather than imported) so this file does
+   * not import a module that type-imports `Container` back, which
+   * `arch:check`'s `no-circular` flags even for a type-only edge. A rejected
+   * stored value is silently treated as unset here (no request/logger exists
+   * at this layer to report it), which only affects document RANKING, never a
+   * thrown error.
+   */
+  get contextDocReader(): ContextDocReader {
+    if (this._contextDocReader) return this._contextDocReader;
+    const service = new ProjectContextService({
+      git: this.git,
+      tokenizer: this.tokenizer,
+      contextRoots: async (workspaceId: string) => {
+        const rows = await this.db
+          .select({ key: t.settings.key, value: t.settings.value })
+          .from(t.settings)
+          .where(eq(t.settings.workspaceId, workspaceId));
+        const parsed = ContextRoots.safeParse(
+          (rowsToSettings(rows) as { context_roots?: unknown }).context_roots,
+        );
+        return parsed.success ? parsed.data : DEFAULT_CONTEXT_ROOTS;
+      },
+      repoRepo: this.repoRepo,
+      repo: this.projectContextRepo,
+    });
+    this._contextDocReader = service;
+    return this._contextDocReader;
   }
 
   get codeIndex(): CodeIndex {
