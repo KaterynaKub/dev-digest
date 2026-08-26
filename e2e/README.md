@@ -101,3 +101,5 @@ a CI artifact by `.github/workflows/e2e-web.yml`).
 | `06-onboarding` | `/onboarding` → add-repository form renders (no submit) |
 | `07-settings` | `/settings/api-keys` + `/settings/models` → section titles render |
 | `08-skills` | Skills list → seeded skill card → in-page preview; agent editor → Skills tab → order-hint copy |
+| `09-project-context` | Project Context page → not-cloned state; agent editor → Context tab → attachment counter |
+| `10-pr-brief` | PR #482 → Overview tab → seeded PR Brief card (risk level, review focus, zero-cost provenance) → click a focus entry → Files changed tab reveals that diff row |

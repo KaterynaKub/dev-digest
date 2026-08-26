@@ -365,3 +365,47 @@ Two ways to catch it fast:
 
 Note `RunTraceDrawer.test.tsx` passes `messages` unwrapped and still works — it
 mocks the trace hooks and mounts differently, so it is not a counter-example.
+
+## Trap: two JSX siblings that are each valid text render as separate DOM text nodes, so `getByText("exact")` fails even though the text is visually adjacent
+
+**Found:** 2026-08-25 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/PrBriefCard
+
+`<span>{a}{b}</span>` where `a` and `b` are two JSX expressions on separate
+lines (e.g. a computed cost string followed by a conditional token-count
+fragment) does not concatenate into one text node — each `{...}` becomes its
+own child text node under the same element. `screen.getByText("$0")` then
+fails even when the rendered line reads exactly `$0 · 8200 in → 1300 out
+tokens`, because RTL's default text matcher walks per-node and `element.
+textContent` for the *matched* node is only that node's own text, while a
+custom `(content, el) => ...` matcher receives the *parent* element's full
+`textContent` once multiple children are involved — inconsistent depending on
+which element RTL happens to test first, so debugging by intuition is
+unreliable.
+
+Do not special-case the test with a custom matcher/regex. Wrap each logically
+independent piece of text in its **own** element (`<span>{costText}</span>`
+next to a separate `<span>{tokensText}</span>`) so each is a whole, addressable
+text node — this also makes `getByText` exact-match again, and keeps the fix
+in the component rather than papering over it in every test that reads that
+line.
+
+## Trap: adding a hook call to an already-tested component breaks every existing test that mocks its hooks module, with an error that names the new hook, not the test
+
+**Found:** 2026-08-26 · **Applies to:** src/app/repos/[repoId]/pulls/[number]/_components/PrBriefCard
+
+`vi.mock("@/lib/hooks/reviews", () => ({ useBrief: vi.fn(), useGenerateBrief:
+vi.fn() }))` is a full object-literal replacement of the module, not a partial
+mock — every export the real module has but the mock object omits becomes
+`undefined` at import time. Adding `<BriefTimeline prId={prId} />` inside
+`PrBriefCard` (which internally calls the new `useBriefTimeline`) made every
+pre-existing `PrBriefCard.test.tsx` case fail with `No "useBriefTimeline"
+export is defined on the "@/lib/hooks/reviews" mock`, even though none of
+those tests reference the timeline at all — the failure is a render-time crash
+inside the child, not a missing-mock warning at the point of use.
+
+The fix is not `importOriginal` (vitest's own suggested workaround) — it is
+adding the new hook to the mock's object literal with a safe default (here, a
+resolved empty timeline) so every consumer of the module continues to render.
+When a plan adds a new hook call to an already-tested component, updating that
+component's existing test's `vi.mock` block is part of the same change, not a
+follow-up.

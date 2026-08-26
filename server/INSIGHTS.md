@@ -490,3 +490,151 @@ Seen in `project-context-prompt.it.test.ts` (`0001b`): 5 of 7 passing together,
 `timeoutMs` well above the number of runs × ~10 s. If a run-asserting test
 fails on a field being `undefined`, re-run it alone with `-t` before believing
 the production code is at fault.
+
+## Trap: `arch:check`'s `helpers-are-pure` rule is looser than the convention a module's plan may demand
+
+**Found:** 2026-08-25 · **Applies to:** .dependency-cruiser.cjs, src/modules/*/helpers.ts
+
+`helpers-are-pure` (`.dependency-cruiser.cjs`) only forbids a `helpers.ts` from
+importing `^src/(db|adapters)/`, `platform/container.ts`, or a short list of
+native node_modules (`fastify`, `drizzle-orm`, `postgres`, `octokit`,
+`simple-git`). It says nothing about importing another module's `helpers.ts`,
+`reviewer-core`, or anything else pure — all of that passes `arch:check`
+clean. A stricter convention ("only `@devdigest/shared` types and
+`./constants.js`", as `0002a-pr-brief-server.md` specified for
+`modules/brief/helpers.ts`) is a *design* discipline the plan chose, not
+something the tool enforces — `arch:check` reporting 0 new violations is not
+evidence that a helpers file honoured a narrower per-module rule than the
+dependency-cruiser config actually encodes. Concretely, this meant
+`buildBriefLineIndex` (a near-duplicate of `reviewer-core#buildLineIndex`) was
+re-implemented locally in `brief/helpers.ts` rather than imported — the import
+would have passed `arch:check` silently, and only the plan's own stricter
+wording caught it. When a plan states a narrower import list than
+`helpers-are-pure` actually checks, verify by reading the file's imports
+directly; do not trust a clean `arch:check` run as proof.
+
+---
+
+## Trap: `no-circular` fires on a TYPE-ONLY import back into `platform/container.ts`
+
+**Found:** 2026-08-25 · **Applies to:** .dependency-cruiser.cjs, src/platform/container.ts
+
+Adding `import { readContextRoots } from '../modules/settings/feature-models.js'`
+to `container.ts` (to satisfy the new `ContextDocReader` port's `contextRoots`
+resolver) turned the pre-existing 6-warning baseline into 7: a new
+`no-circular: src/modules/settings/feature-models.ts → src/platform/container.ts
+→ src/modules/settings/feature-models.ts` warning appeared, even though
+`feature-models.ts`'s only reference back to `container.ts` is `import type
+{ Container } from '../../platform/container.js'` — a type that is fully
+erased at runtime and adds no real dependency. `dependency-cruiser`'s
+`no-circular` rule does not distinguish `import type` from a value import when
+building the graph; a type-only edge closes the cycle exactly like a value one
+does. Any new `container.ts` getter that wants to reuse a helper from a
+`modules/*/routes.ts`-adjacent file which itself type-imports `Container`
+(the common pattern for `buildXDeps(container: Container)` factories) will hit
+this. Fix: reimplement the small piece of logic locally in `container.ts`
+using cycle-free imports (`db/schema.ts`, a module's pure `helpers.ts`, and the
+`@devdigest/shared` zod schema directly) rather than importing the
+`Container`-typed helper — do not assume a `type`-only import is invisible to
+`arch:check`.
+
+---
+
+## The `no-circular` container trap is scoped to `container.ts`, not to the module
+
+**Found:** 2026-08-25 · **Applies to:** .dependency-cruiser.cjs, src/platform/container.ts, src/modules/*/routes.ts
+
+Verified empirically during a self-review, by temporarily adding the avoided
+import and re-running `arch:check`: importing
+`settings/feature-models.js#readContextRoots` **into `container.ts`** takes the
+baseline from 6 to 7 warnings (`no-circular: settings/feature-models.ts → …`),
+because `feature-models.ts` type-imports `Container` back. But the same import
+**in a module's `routes.ts` is completely fine** — `brief/routes.ts` imports
+`readContextRoots` and the count stays at 6, because `routes.ts` is not what
+closes the loop.
+
+The practical consequence: when a new port needs a `Container`-typed helper,
+do not reflexively duplicate the helper's logic into `container.ts`. First ask
+whether the resolver can be composed one layer out, in `routes.ts`, where the
+import is free — `brief/routes.ts#buildBriefDeps` does exactly this for
+`contextRoots` while `container.ts#contextDocReader` duplicates the same parse
+for its own construction of `ProjectContextService`. Only the latter genuinely
+needed the workaround.
+
+Method worth reusing: to check whether an "this import would break arch:check"
+claim is true, inject the import, run `pnpm arch:check`, read the summary line,
+then restore the file. It costs one minute and turns a plausible assumption
+into a measured fact — the review that recorded this had inherited the claim
+unverified from two prior agents.
+
+---
+
+## A numeric cap defined in `constants.ts` is restated in three other places in `docs/specs/`, none of them checked by any tool
+
+**Found:** 2026-08-26 · **Applies to:** src/modules/brief/constants.ts, docs/specs/SPEC-02-pr-why-risk-brief.md
+
+Changing `MAX_BRIEF_DOC_TOKENS` (40_000 → 4_000, to fit under the new
+`MAX_BRIEF_INPUT_TOKENS` = 8_000 budget) only compiles-and-tests green; it does
+NOT surface the two prose restatements of the same number that already existed
+in the spec — AC-16 and NFR-6 both spelled out "40 000 estimated tokens" in
+free text, independently of the code and of each other. Nothing greps these on
+build; a spec left saying one number while the code enforces another is a
+silent, undetectable drift. When a plan or task changes a cap that a spec
+already quantifies, `grep` the spec for the OLD literal (with common
+formattings: `40_000`, `40 000`, `40,000`) before declaring the edit done —
+the traceability table only proves the requirement is tested, never that its
+stated value still matches the code.
+
+---
+
+## `drizzle-kit generate` on a composite-PK change over an already-populated table emits an unsafe migration silently
+
+**Found:** 2026-08-26 · **Applies to:** src/db/schema/reviews.ts, src/db/migrations/
+
+Widening `pr_brief`'s PK from `prId` alone to `(prId, headSha, indexedShaKey)`
+and running `pnpm db:generate` produced a migration that only ADDs the new
+constraint — it does **not** DROP the old one first (drizzle-kit cannot infer
+the existing constraint's name, so it leaves a `-- ALTER TABLE ... DROP
+CONSTRAINT "<constraint_name>"` comment for a human to fill in and uncomment),
+and it does **not** backfill the new PK column before adding it to the key —
+the column keeps its bare `DEFAULT ''`, so any row that already has a real
+`indexed_sha` gets keyed on `''` instead, silently colliding with any other
+`indexed_sha: null` row for the same PR. Applied as generated, this migration
+would either fail outright (old PK constraint still present under a name
+Postgres now rejects for the new one) or succeed while quietly mis-keying
+every pre-existing row.
+
+`generate` is safe to run for the journal/snapshot shape and to see what
+Drizzle infers, but treat its SQL as a draft, not the migration, whenever a
+table may already hold rows: verify the real constraint name first
+(`SELECT conname FROM pg_constraint WHERE conrelid = '<table>'::regclass AND
+contype = 'p'`), hand-write the DROP + backfill `UPDATE` + ADD CONSTRAINT
+sequence, and only keep the machine-generated `meta/*_snapshot.json` +
+`_journal.json` entries (fixing the journal's `tag` to match the hand-written
+filename, since `generate` names the tag after ITS OWN discarded file).
+
+---
+
+## `brief.it.test.ts` can only produce a real `indexed_sha: null` row by omitting the PR's `pr_files` rows entirely, not by mocking `repoIntel`
+
+**Found:** 2026-08-26 · **Applies to:** src/modules/brief/brief.it.test.ts, src/modules/blast/service.ts
+
+`BriefService#doGenerate` reads the current index leg of the cache key through
+`deps.blastReader.forPull`, which is `BlastService#forPull` wired whole (brief
+takes no repository double for it, only the structural `BlastReader` port). That
+service's OWN early return — "a PR with zero `pr_files` rows is a fact, not a
+data gap" — is the only path that reports `indexed_sha: null` independent of
+`stubRepoIntel`'s `IndexState.lastIndexedSha`, which is a non-optional `string`
+and always truthy in every existing fixture. Overriding `stubRepoIntel`'s
+`indexState` cannot produce `null` short of also mutating `buildBlastRadius`'s
+own logic, since `indexed_sha` is `indexState?.lastIndexedSha ? … : null` and
+the field's type does not admit `undefined`.
+
+The one way to exercise AC-28's `indexed_sha: null` case end-to-end is to call
+`setupRepoAndPr` (or an equivalent) WITHOUT inserting the `pr_files` row for
+that PR — `doGenerate` still proceeds normally because `loadDiff` prefers the
+mock `GitClient`'s diff over `pr_files` reconstruction, so the two reads are
+independent: the generation succeeds, but blast's `getPrFiles` returns `[]`,
+taking the early-return path and forcing `indexed_sha: null` regardless of the
+index stub. Any future test needing a null-indexed brief should reach for this
+same trick rather than trying to coax `stubRepoIntel` into it.
